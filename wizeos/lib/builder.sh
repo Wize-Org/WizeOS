@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+fix_builder_ownership_before_handoff() {
+  mkdir -p "${WORKDIR}"
+
+  # Root-side preparation may create keys, release, Magisk or KSU folders before
+  # the Android build runs as BUILD_USER. Make the builder-owned handoff
+  # explicit so finalize.sh and release packaging can write under releases/.
+  chown "${BUILD_USER}:${BUILD_USER}" "${WORKDIR}" 2>/dev/null || true
+
+  local path
+  for path in \
+    "${WORKDIR}/keys" \
+    "${WORKDIR}/releases" \
+    "${WORKDIR}/magisk" \
+    "${WORKDIR}/ksunext"
+  do
+    [ ! -e "${path}" ] || chown -R "${BUILD_USER}:${BUILD_USER}" "${path}" 2>/dev/null || true
+  done
+
+  if [ "${KERNEL_BUILD:-}" = "prebuilt" ]; then
+    local src="${KERNEL_PREBUILT_IMAGE:-/root/Image}"
+    local handoff_dir="/home/${BUILD_USER}/wizeos-prebuilt"
+    local handoff_image="${handoff_dir}/Image"
+
+    [ -f "${src}" ] || die "Prebuilt kernel Image not found or not readable by root: ${src}"
+    install -d -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0755 "${handoff_dir}"
+    install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0644 "${src}" "${handoff_image}"
+    KERNEL_PREBUILT_IMAGE_WORKDIR="${handoff_image}"
+    export KERNEL_PREBUILT_IMAGE_WORKDIR
+  fi
+}
+
+run_builder_phase() {
+  local builder_action="$1"
+  local runner="/home/${BUILD_USER}/run-wizeos-builder-${TAG}.sh"
+  fix_builder_ownership_before_handoff
+  install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0700 "${SCRIPT_DIR}/scripts/run-as-builder.sh" "${runner}"
+  log "Running builder phase: ${builder_action}"
+  sudo -H -u "${BUILD_USER}" env \
+    HOME="/home/${BUILD_USER}" USER="${BUILD_USER}" LOGNAME="${BUILD_USER}" \
+    XDG_CONFIG_HOME="/home/${BUILD_USER}/.config" XDG_CACHE_HOME="/home/${BUILD_USER}/.cache" GIT_CONFIG_NOSYSTEM=1 \
+    GIT_USER_NAME="${GIT_USER_NAME}" GIT_USER_EMAIL="${GIT_USER_EMAIL}" \
+    MANIFEST_URL="${MANIFEST_URL}" MANIFEST_BRANCH="${MANIFEST_BRANCH}" MANIFEST_FILE="${MANIFEST_FILE}" VERIFY_MANIFEST_TAG="${VERIFY_MANIFEST_TAG}" \
+    DEVICE="${DEVICE}" TAG="${TAG}" BUILD_NUMBER="${BUILD_NUMBER}" UPDATE_SERVER="${UPDATE_SERVER}" OFFICIAL_BUILD="${OFFICIAL_BUILD}" \
+    WIZEOS_PROFILE="${WIZEOS_PROFILE}" WIZEOS_PROFILE_PATCHES_DIR="${WIZEOS_PROFILE_PATCHES_DIR}" \
+    LSPOSED_COMPAT="${LSPOSED_COMPAT}" LSPOSED_PATCHES_DIR="${LSPOSED_PATCHES_DIR}" CLEAN_OUT="${CLEAN_OUT}" JOBS="${JOBS}" BASE_DIR="${BASE_DIR}" WORKDIR="${WORKDIR}" SYNC_JOBS="${SYNC_JOBS}" \
+    SIGNED="${SIGNED}" ROOT="${ROOT}" MAGISK_APK_WORKDIR="${MAGISK_APK_WORKDIR:-}" MAGISK_PREINIT_DEVICE="${MAGISK_PREINIT_DEVICE}" \
+    AVBROOT="${AVBROOT}" AVBROOT_AVB_KEY="${AVBROOT_AVB_KEY:-}" AVBROOT_OTA_KEY="${AVBROOT_OTA_KEY:-}" AVBROOT_OTA_CERT="${AVBROOT_OTA_CERT:-}" AVBROOT_PASS_AVB_FILE="${AVBROOT_PASS_AVB_FILE:-}" AVBROOT_PASS_OTA_FILE="${AVBROOT_PASS_OTA_FILE:-}" \
+    KSU_MANAGER_APK_WORKDIR="${KSU_MANAGER_APK_WORKDIR:-}" KSU_ZYGISK_ZIP_WORKDIR="${KSU_ZYGISK_ZIP_WORKDIR:-}" KSU_MANAGER_RELEASE_NAME="${KSU_MANAGER_RELEASE_NAME:-}" KSU_ZYGISK_RELEASE_NAME="${KSU_ZYGISK_RELEASE_NAME:-}" \
+    KSU_PATCH_KERNEL="${KSU_PATCH_KERNEL}" KSU_INTEGRATION_RESOLVED="${KSU_INTEGRATION_RESOLVED:-${KSU_INTEGRATION}}" KSU_SETUP_URL_RESOLVED="${KSU_SETUP_URL_RESOLVED:-${KSU_SETUP_URL}}" KSU_SETUP_ARG_RESOLVED="${KSU_SETUP_ARG_RESOLVED:-${KSU_SETUP_ARG}}" KSU_KERNEL_PATCH_DIR_RESOLVED="${KSU_KERNEL_PATCH_DIR_RESOLVED:-${KSU_KERNEL_PATCH_DIR}}" \
+    KSUNEXT_SUSFS="${KSUNEXT_SUSFS}" SUSFS_PATCH_KERNEL="${SUSFS_PATCH_KERNEL}" SUSFS_KERNEL_PATCH_DIR="${SUSFS_KERNEL_PATCH_DIR}" SUSFS_MODULE_ZIP_WORKDIR="${SUSFS_MODULE_ZIP_WORKDIR:-}" \
+    KERNEL_BUILD="${KERNEL_BUILD}" KERNEL_BASE_DIR="${KERNEL_BASE_DIR}" KERNEL_REPO_URL="${KERNEL_REPO_URL}" KERNEL_REPO_BRANCH="${KERNEL_REPO_BRANCH}" KERNEL_WORKDIR="${KERNEL_WORKDIR}" KERNEL_CODENAME="${KERNEL_CODENAME}" \
+    KERNEL_BUILD_SCRIPT="${KERNEL_BUILD_SCRIPT}" KERNEL_BUILD_ARGS="${KERNEL_BUILD_ARGS}" KERNEL_OS_PREBUILT_DIR="${KERNEL_OS_PREBUILT_DIR}" KERNEL_DIST_DIR="${KERNEL_DIST_DIR}" KERNEL_REPO_MANIFEST_FILE="${KERNEL_REPO_MANIFEST_FILE}" KERNEL_CLEAN="${KERNEL_CLEAN}" \
+    KERNEL_PREBUILT_IMAGE="${KERNEL_PREBUILT_IMAGE_WORKDIR:-${KERNEL_PREBUILT_IMAGE:-/root/Image}}" KERNEL_PREBUILT_IMAGE_NAME="${KERNEL_PREBUILT_IMAGE_NAME:-Image}" \
+    SIGNING_KEY_PASSPHRASE_FILE="${SIGNING_KEY_PASSPHRASE_FILE:-}" BUILDER_ACTION="${builder_action}" \
+    bash "${runner}"
+}
