@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: WizeOS <wissam@adonisspices.com>
+Date: Fri, 12 Jun 2026 00:00:00 +0300
+Subject: [PATCH] manifest: add GrapheneOS GmsCompat 16-qpr2 project
+
+WIP: import GrapheneOS's maintained GmsCompat app/lib/config source as
+an external project for the fresh LineageOS 23.2 forward-port.
+
+Apply this to `.repo/local_manifests/gmscompat.xml` or merge the project
+entry into the existing WizeOS local manifest.
+---
+ gmscompat.xml | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+ create mode 100644 gmscompat.xml
+
+diff --git a/gmscompat.xml b/gmscompat.xml
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/gmscompat.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<manifest>
++    <remote name="grapheneos"
++            fetch="https://github.com/GrapheneOS" />
++
++    <project path="packages/apps/GmsCompat"
++             name="platform_packages_apps_GmsCompat"
++             remote="grapheneos"
++             revision="16-qpr2" />
++</manifest>
+-- 
+2.43.0

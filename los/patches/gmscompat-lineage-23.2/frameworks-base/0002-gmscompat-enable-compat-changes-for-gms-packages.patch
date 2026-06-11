@@ -1,0 +1,34 @@
+From 420c945eb2eb6a3cc08754c0de79efe7d7f464e2 Mon Sep 17 00:00:00 2001
+From: Wisso <wissam@adonisspices.com>
+Date: Fri, 12 Jun 2026 13:28:56 +0000
+Subject: [PATCH] gmscompat: enable compat changes for GMS packages
+
+---
+ .../core/java/com/android/server/compat/CompatChange.java     | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/services/core/java/com/android/server/compat/CompatChange.java b/services/core/java/com/android/server/compat/CompatChange.java
+index 5c1db38bdad1..0875d466230d 100644
+--- a/services/core/java/com/android/server/compat/CompatChange.java
++++ b/services/core/java/com/android/server/compat/CompatChange.java
+@@ -21,6 +21,7 @@ import static android.app.compat.PackageOverride.VALUE_ENABLED;
+ import static android.app.compat.PackageOverride.VALUE_UNDEFINED;
+ 
+ import android.annotation.Nullable;
++import android.app.compat.gms.GmsCompat;
+ import android.app.compat.PackageOverride;
+ import android.compat.annotation.ChangeId;
+ import android.compat.annotation.Disabled;
+@@ -246,6 +247,9 @@ public final class CompatChange extends CompatibilityChangeInfo {
+                 return enabled;
+             }
+         }
++        if (GmsCompat.isChangeEnabled(getId(), app)) {
++            return true;
++        }
+         if (getDisabled()) {
+             return false;
+         }
+-- 
+2.53.0
+
