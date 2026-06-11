@@ -1,0 +1,766 @@
+Repo / context:
+Repository: wizdom13/platform_frameworks_base
+Branch: 16-qpr2
+Project: Android frameworks/base for a custom Android 16 / QPR2 WizeOS ROM build.
+
+Rules:
+- Work directly against the current 16-qpr2 branch layout.
+- This is a source-level frameworks/base patch, not a smali patch.
+- Use the Android 16 path layout in this repo.
+- Do not assume older paths such as android.content.pm.parsing. This tree uses:
+  core/java/com/android/internal/pm/pkg/parsing/ParsingPackageUtils.java
+- Implement a property-controlled WizeOS CorePatch feature.
+- The feature must work on release/user builds too.
+- Do NOT gate it with Build.IS_DEBUGGABLE.
+- Do NOT make it always enabled.
+- Do NOT globally patch java.security.MessageDigest.
+- Do NOT blindly return true from all SigningDetails methods.
+- Keep the feature off by default.
+- Add clear comments around every WizeOS CorePatch branch.
+- Keep changes minimal and localized.
+
+Feature property:
+    persist.wizeos.corepatch
+
+Feature helper:
+    ApkSignatureVerifier.isWizeOsCorePatchEnabled()
+
+Goal:
+Implement WizeOS CorePatch so that, when persist.wizeos.corepatch is true, PackageManager allows:
+
+1. Downgrade apps.
+2. Install modified APKs over the same package name.
+3. Install packages / split APKs with inconsistent signatures.
+
+When persist.wizeos.corepatch is false or missing, Android must behave like stock.
+
+Expected user behavior:
+Enabled:
+    adb shell setprop persist.wizeos.corepatch true
+
+Disabled:
+    adb shell setprop persist.wizeos.corepatch false
+
+When enabled, these should work:
+    adb install -r modified-same-package-different-signature.apk
+    adb install -r -d older-version.apk
+    adb install-multiple -r base.apk split_config.apk
+
+When disabled, the same operations should return stock Android failures.
+
+Important release/user build note:
+- The framework code must read persist.wizeos.corepatch with SystemProperties.
+- Do not check Build.IS_DEBUGGABLE.
+- If adb shell cannot set persist.wizeos.corepatch on user builds because of property contexts / SELinux / init property rules, report that as a follow-up.
+- Do not add fake or guessed property_contexts changes inside frameworks/base if the correct files are outside this repo.
+
+Problem / root cause:
+Android rejects these installs because:
+
+1. ParsingPackageUtils.getSigningDetails(...) collects APK signing details through ApkSignatureVerifier.verify(...).
+2. ApkSignatureVerifier.verify(...) performs full APK content/signature verification.
+3. ParsingPackageUtils rejects split APKs when Signature.areExactMatch(existingSigningDetails, verified.getResult()) is false, returning INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES.
+4. InstallPackageHelper rejects replacement APKs when the new parsed signing details do not match the old installed signing details.
+5. PackageManagerServiceUtils.verifySignatures(...) rejects existing package updates with INSTALL_FAILED_UPDATE_INCOMPATIBLE when signatures differ.
+6. Downgrade checks reject older versionCode installs unless special stock conditions are satisfied.
+7. KeySetManagerService and ReconcilePackageUtils can also reject updates before or after the normal signature checks.
+
+Files to inspect:
+- core/java/android/util/apk/ApkSignatureVerifier.java
+- core/java/com/android/internal/pm/pkg/parsing/ParsingPackageUtils.java
+- core/java/android/content/pm/SigningDetails.java
+- core/java/android/util/jar/StrictJarVerifier.java
+- core/java/android/util/apk/ApkSigningBlockUtils.java
+- services/core/java/com/android/server/pm/InstallPackageHelper.java
+- services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+- services/core/java/com/android/server/pm/ReconcilePackageUtils.java
+- services/core/java/com/android/server/pm/KeySetManagerService.java
+- services/core/java/com/android/server/pm/ScanPackageUtils.java
+
+Search terms:
+- persist.wizeos.corepatch
+- isWizeOsCorePatchEnabled
+- getSigningDetails
+- ApkSignatureVerifier.verify
+- verifySignatures
+- checkDowngrade
+- INSTALL_FAILED_VERSION_DOWNGRADE
+- INSTALL_FAILED_UPDATE_INCOMPATIBLE
+- INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES
+- checkCapability
+- doesSignatureMatchForPermissions
+- shouldCheckUpgradeKeySetLocked
+- checkUpgradeKeySetLocked
+- assertMinSignatureSchemeIsValid
+- versionCode
+- getLongVersionCode
+- PackageInfoLite
+
+Files to modify first:
+1. core/java/android/util/apk/ApkSignatureVerifier.java
+2. core/java/com/android/internal/pm/pkg/parsing/ParsingPackageUtils.java
+3. services/core/java/com/android/server/pm/InstallPackageHelper.java
+4. services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+
+Modify additional files only if needed after tracing failures:
+- services/core/java/com/android/server/pm/ReconcilePackageUtils.java
+- services/core/java/com/android/server/pm/KeySetManagerService.java
+- services/core/java/com/android/server/pm/ScanPackageUtils.java
+- core/java/android/util/jar/StrictJarVerifier.java
+- core/java/android/util/apk/ApkSigningBlockUtils.java
+- core/java/android/content/pm/SigningDetails.java
+
+Required fix:
+
+1. Add central WizeOS CorePatch helper
+
+File:
+    core/java/android/util/apk/ApkSignatureVerifier.java
+
+Add import:
+    import android.os.SystemProperties;
+
+Add constants/helper:
+
+    private static final String WIZEOS_COREPATCH_PROP =
+            "persist.wizeos.corepatch";
+
+    public static boolean isWizeOsCorePatchEnabled() {
+        return SystemProperties.getBoolean(WIZEOS_COREPATCH_PROP, false);
+    }
+
+Important:
+- Do NOT check Build.IS_DEBUGGABLE.
+- Default must be false.
+- All WizeOS CorePatch behavior must use this helper.
+
+2. Relax full APK content verification
+
+File:
+    core/java/android/util/apk/ApkSignatureVerifier.java
+
+Target method:
+    public static ParseResult<SigningDetails> verify(ParseInput input, String apkPath,
+            @SignatureSchemeVersion int minSignatureSchemeVersion)
+
+Current behavior:
+    return verifySignatures(input, apkPath, minSignatureSchemeVersion, true /* verifyFull */);
+
+Required behavior:
+- If isWizeOsCorePatchEnabled() is true, call verifySignatures(..., false /* verifyFull */).
+- Otherwise preserve stock behavior.
+
+Expected shape:
+
+    public static ParseResult<SigningDetails> verify(ParseInput input, String apkPath,
+            @SignatureSchemeVersion int minSignatureSchemeVersion) {
+        if (isWizeOsCorePatchEnabled()) {
+            Slog.w(LOG_TAG, "WizeOS CorePatch enabled; collecting certs only for "
+                    + apkPath);
+            return verifySignatures(input, apkPath, minSignatureSchemeVersion,
+                    false /* verifyFull */);
+        }
+        return verifySignatures(input, apkPath, minSignatureSchemeVersion,
+                true /* verifyFull */);
+    }
+
+Do not change java.security.MessageDigest globally.
+
+3. Allow inconsistent split/package signatures
+
+File:
+    core/java/com/android/internal/pm/pkg/parsing/ParsingPackageUtils.java
+
+Target method:
+    public static ParseResult<SigningDetails> getSigningDetails(ParseInput input,
+            String baseCodePath, boolean skipVerify, boolean isStaticSharedLibrary,
+            @NonNull SigningDetails existingSigningDetails, int targetSdk)
+
+Current failure pattern:
+    if (!Signature.areExactMatch(existingSigningDetails, verified.getResult())) {
+        return input.error(INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES,
+                baseCodePath + " has mismatched certificates");
+    }
+
+Required behavior:
+- If ApkSignatureVerifier.isWizeOsCorePatchEnabled() is true, allow the mismatch and return input.success(existingSigningDetails).
+- Otherwise preserve stock failure.
+- Log a warning.
+
+Expected shape:
+
+    if (!Signature.areExactMatch(existingSigningDetails, verified.getResult())) {
+        if (ApkSignatureVerifier.isWizeOsCorePatchEnabled()) {
+            Slog.w(TAG, "WizeOS CorePatch enabled; allowing mismatched "
+                    + "certificates for " + baseCodePath);
+            return input.success(existingSigningDetails);
+        }
+        return input.error(INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES,
+                baseCodePath + " has mismatched certificates");
+    }
+
+4. Allow modified APK replacement over same package name
+
+File:
+    services/core/java/com/android/server/pm/InstallPackageHelper.java
+
+Add import if needed:
+    import android.util.apk.ApkSignatureVerifier;
+
+Target replacement install path:
+Find the block that compares:
+    parsedPkgSigningDetails.checkCapability(oldPkgSigningDetails,
+            SigningDetails.CertCapabilities.INSTALLED_DATA)
+    oldPkgSigningDetails.checkCapability(parsedPkgSigningDetails,
+            SigningDetails.CertCapabilities.ROLLBACK)
+
+and throws:
+    INSTALL_FAILED_UPDATE_INCOMPATIBLE
+    "New package has a different signature: " + pkgName11
+
+Required behavior:
+- If ApkSignatureVerifier.isWizeOsCorePatchEnabled() is true, allow replacement to continue.
+- Otherwise preserve stock behavior.
+- Log warning with package name.
+
+Expected shape:
+
+    if (!parsedPkgSigningDetails.checkCapability(oldPkgSigningDetails,
+            SigningDetails.CertCapabilities.INSTALLED_DATA)
+            && !oldPkgSigningDetails.checkCapability(parsedPkgSigningDetails,
+            SigningDetails.CertCapabilities.ROLLBACK)) {
+        if (ApkSignatureVerifier.isWizeOsCorePatchEnabled()) {
+            Slog.w(TAG, "WizeOS CorePatch enabled; allowing replacement "
+                    + "with different signature: " + pkgName11);
+        } else if (!isRollback || !oldPkgSigningDetails.hasAncestorOrSelf(
+                parsedPkgSigningDetails)) {
+            throw new PrepareFailure(INSTALL_FAILED_UPDATE_INCOMPATIBLE,
+                    "New package has a different signature: " + pkgName11);
+        }
+    }
+
+5. Bypass upgrade-keyset mismatch when WizeOS CorePatch is enabled
+
+File:
+    services/core/java/com/android/server/pm/InstallPackageHelper.java
+
+Target replacement path:
+Find:
+    ksms.shouldCheckUpgradeKeySetLocked(ps, sharedUserSetting, scanFlags)
+    ksms.checkUpgradeKeySetLocked(ps, parsedPackage)
+
+Current failure:
+    throw new PrepareFailure(INSTALL_FAILED_UPDATE_INCOMPATIBLE,
+            "New package not signed by keys specified by upgrade-keysets: " + pkgName11);
+
+Required behavior:
+- If ApkSignatureVerifier.isWizeOsCorePatchEnabled() is true, log and continue.
+- Otherwise preserve stock failure.
+
+Expected shape:
+
+    if (ksms.shouldCheckUpgradeKeySetLocked(ps, sharedUserSetting, scanFlags)) {
+        if (!ksms.checkUpgradeKeySetLocked(ps, parsedPackage)) {
+            if (ApkSignatureVerifier.isWizeOsCorePatchEnabled()) {
+                Slog.w(TAG, "WizeOS CorePatch enabled; ignoring upgrade-keyset "
+                        + "mismatch for " + pkgName11);
+            } else {
+                throw new PrepareFailure(INSTALL_FAILED_UPDATE_INCOMPATIBLE,
+                        "New package not signed by keys specified by upgrade-keysets: "
+                                + pkgName11);
+            }
+        }
+    } else {
+        ...
+    }
+
+6. Allow update signature mismatch in PackageManagerServiceUtils
+
+File:
+    services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+
+Add import if needed:
+    import android.util.apk.ApkSignatureVerifier;
+
+Target method:
+    verifySignatures(...)
+
+Target failure:
+    if (!match) {
+        throw new PackageManagerException(INSTALL_FAILED_UPDATE_INCOMPATIBLE,
+                "Existing package " + packageName
+                        + " signatures do not match newer version; ignoring!");
+    }
+
+Required behavior:
+- If ApkSignatureVerifier.isWizeOsCorePatchEnabled() is true, do not throw; log warning and continue.
+- Otherwise preserve stock behavior.
+- Do not globally force compareSignatures to match.
+- Do not change compareSignatureArrays globally.
+
+Expected shape:
+
+    if (!match) {
+        if (ApkSignatureVerifier.isWizeOsCorePatchEnabled()) {
+            Slog.w(TAG, "WizeOS CorePatch enabled; allowing update "
+                    + "with mismatched signatures for " + packageName);
+        } else {
+            throw new PackageManagerException(INSTALL_FAILED_UPDATE_INCOMPATIBLE,
+                    "Existing package " + packageName
+                            + " signatures do not match newer version; ignoring!");
+        }
+    }
+
+7. Allow downgrades
+
+Find all downgrade checks in this repo.
+
+Search for:
+    checkDowngrade
+    INSTALL_FAILED_VERSION_DOWNGRADE
+    versionCode
+    getLongVersionCode()
+    PackageInfoLite
+    older version
+    downgrade
+
+Likely files:
+- services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+- services/core/java/com/android/server/pm/InstallPackageHelper.java
+- services/core/java/com/android/server/pm/ScanPackageUtils.java
+
+Required behavior:
+- If ApkSignatureVerifier.isWizeOsCorePatchEnabled() is true, app version downgrades must be allowed.
+- Otherwise preserve stock behavior.
+- Log warning when downgrade is allowed by WizeOS CorePatch.
+- Do not alter INSTALL_FAILED_PERMISSION_MODEL_DOWNGRADE unless it is the only remaining downgrade failure and is explicitly tied to versionCode downgrade handling.
+
+For checkDowngrade-style methods, expected shape:
+
+    if (ApkSignatureVerifier.isWizeOsCorePatchEnabled()) {
+        Slog.w(TAG, "WizeOS CorePatch enabled; allowing downgrade for " + packageName);
+        return;
+    }
+
+For inline versionCode checks, expected shape:
+
+    if (isDowngradeCondition) {
+        if (ApkSignatureVerifier.isWizeOsCorePatchEnabled()) {
+            Slog.w(TAG, "WizeOS CorePatch enabled; allowing downgrade for "
+                    + parsedPackage.getPackageName());
+        } else {
+            throw new PrepareFailure(INSTALL_FAILED_VERSION_DOWNGRADE, ...);
+        }
+    }
+
+8. ReconcilePackageUtils follow-through
+
+File:
+    services/core/java/com/android/server/pm/ReconcilePackageUtils.java
+
+Inspect reconcilePackages(...) for:
+- PackageManagerServiceUtils.verifySignatures(...)
+- KeySetManagerService checks
+- INSTALL_FAILED_UPDATE_INCOMPATIBLE
+- INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES
+- shared-user signature checks
+
+If the previous changes are sufficient, do not modify this file.
+
+If install/update still fails during reconcile:
+- Add a WizeOS CorePatch branch around the exact signature/update/downgrade failure.
+- Gate only with ApkSignatureVerifier.isWizeOsCorePatchEnabled().
+- Log warning and continue.
+- Do not remove unrelated UID/package-name structural checks.
+
+9. ScanPackageUtils follow-through
+
+File:
+    services/core/java/com/android/server/pm/ScanPackageUtils.java
+
+Inspect for:
+- assertMinSignatureSchemeIsValid(...)
+- version downgrade checks
+- INSTALL_FAILED_VERSION_DOWNGRADE
+- INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES
+
+If install still fails here:
+- Gate the specific signature-scheme/downgrade failure with ApkSignatureVerifier.isWizeOsCorePatchEnabled().
+- Log and continue.
+- Preserve stock behavior when property is false.
+
+10. StrictJarVerifier and ApkSigningBlockUtils
+
+Files:
+- core/java/android/util/jar/StrictJarVerifier.java
+- core/java/android/util/apk/ApkSigningBlockUtils.java
+
+Inspect only first.
+
+Modify only if ApkSignatureVerifier certs-only mode is insufficient.
+
+If modification is required:
+- Gate every relaxation with ApkSignatureVerifier.isWizeOsCorePatchEnabled().
+- Do not patch MessageDigest globally.
+- Prefer bypassing local verification failures instead of changing cryptographic primitives globally.
+- Add warning logs.
+
+11. SigningDetails.java
+
+File:
+    core/java/android/content/pm/SigningDetails.java
+
+Avoid modifying this file if possible.
+
+Do not globally make these methods return true:
+- checkCapability
+- checkCapabilityRecover
+- hasAncestorOrSelf
+- hasCommonAncestor
+- signaturesMatchExactly
+- hasCertificate
+
+The patch should bypass PackageManager install/update decisions, not redefine signing semantics globally across Android.
+
+Acceptance criteria:
+
+A. Property off: stock behavior
+
+    adb shell setprop persist.wizeos.corepatch false
+    adb shell getprop persist.wizeos.corepatch
+    adb install -r modified-same-package-different-signature.apk
+
+Expected:
+    Stock Android failure.
+
+B. Install modified APK
+
+    adb shell setprop persist.wizeos.corepatch true
+    adb shell getprop persist.wizeos.corepatch
+    adb install -r modified-same-package-different-signature.apk
+
+Expected:
+    Install succeeds over the same package name even with a different signature.
+
+C. Downgrade app
+
+    adb shell setprop persist.wizeos.corepatch true
+    adb install -r -d older-version.apk
+
+Expected:
+    Downgrade succeeds.
+
+D. Inconsistent signatures / split APKs
+
+    adb shell setprop persist.wizeos.corepatch true
+    adb install-multiple base.apk split_config.apk
+
+Expected:
+    Install succeeds even if base/splits have inconsistent signatures.
+
+E. Regression property off
+
+    adb shell setprop persist.wizeos.corepatch false
+    adb install -r modified-same-package-different-signature.apk
+    adb install -r -d older-version.apk
+    adb install-multiple base.apk split_config.apk
+
+Expected:
+    Stock failures return.
+
+Build / validation commands:
+    frameworks-base-validate
+
+If a full Android/WizeOS tree is available:
+    frameworks-base-aosp-build
+
+If no full tree is available:
+    Do not run raw m targets from the standalone frameworks/base checkout.
+
+Codex environment / validation setup:
+This repository may be checked out standalone as frameworks/base only.
+
+The Codex environment provides these helpers:
+
+1. frameworks-base-validate
+   - Always run this before finishing.
+   - It validates expected frameworks/base files exist.
+   - It validates TEST_MAPPING JSON-with-comments.
+   - It validates XML files under core/res, packages/SystemUI/res, and services.
+   - It checks for merge conflict markers.
+   - It prints git status.
+
+2. frameworks-base-aosp-build
+   - Run this only if a full Android/WizeOS/AOSP tree is available.
+   - This helper searches upward for build/envsetup.sh.
+   - If no full tree exists, it exits with code 2 and explains that this standalone checkout cannot build Soong targets.
+
+Environment:
+    FRAMEWORKS_BASE_CODEX_MODE=module-only
+
+Validation requirements:
+- Always run:
+      frameworks-base-validate
+
+- If the repo is inside a full Android tree, also run:
+      frameworks-base-aosp-build
+
+- If frameworks-base-aosp-build exits because no full Android tree exists, do not treat that as a code failure. Report it under "Remaining risks / follow-ups" as:
+      Full Android build was not available in the standalone Codex checkout.
+
+Do not falsely claim that:
+    m framework-minus-apex services
+passed unless it actually ran inside a full Android source tree.
+
+Final response must include:
+Commands run / pass status:
+- frameworks-base-validate: pass/fail
+- frameworks-base-aosp-build: pass/fail/skipped with reason
+- Any grep/static checks run
+
+Final response format:
+Return exactly these sections:
+
+Root cause:
+- Explain the exact install/signature/downgrade checks that blocked the APK.
+
+Exact files changed:
+- List every file modified.
+
+Fix location:
+- List exact methods changed and the property-gated conditions added.
+
+Tests:
+- List build/static/manual tests performed.
+
+Commands run / pass status:
+- Include each command and pass/fail result.
+
+Remaining risks / follow-ups:
+- Mention whether release/user builds can set persist.wizeos.corepatch with adb shell.
+- Mention any property_contexts / sepolicy / init property follow-up if needed.
+- Mention any remaining Android 16 QPR2 path that still blocks install.
+
+
+
+Repo / context:
+Repository: wizdom13/platform_frameworks_base
+Branch: 16-qpr2
+Current patch already adds WizeOS CorePatch using:
+    persist.wizeos.corepatch
+and:
+    ApkSignatureVerifier.isWizeOsCorePatchEnabled()
+
+Current issue:
+The existing patch allows downgrades when the installer explicitly requests downgrade, such as:
+    adb install -r -d older-version.apk
+
+But normal on-device installers / file managers / Package Installer usually do not pass the same explicit adb downgrade request flag. WizeOS CorePatch should allow downgrades from normal on-device install flows too whenever:
+    persist.wizeos.corepatch=true
+
+Goal:
+Update the current WizeOS CorePatch patch so app downgrade works from normal on-device installers, not only from adb install -d.
+
+Rules:
+- Keep stock behavior when persist.wizeos.corepatch is false or missing.
+- Do not add Build.IS_DEBUGGABLE gating.
+- Do not make downgrade always enabled without the property.
+- Do not change unrelated signature logic unless needed for this downgrade issue.
+- Do not globally patch PackageInstaller UI behavior unless server-side PackageManager checks are not enough.
+- Keep changes minimal and localized.
+- Add clear warning logs for every WizeOS CorePatch downgrade bypass.
+
+Files to inspect:
+- services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+- services/core/java/com/android/server/pm/InstallPackageHelper.java
+- services/core/java/com/android/server/pm/ScanPackageUtils.java
+- services/core/java/com/android/server/pm/PackageInstallerSession.java
+- services/core/java/com/android/server/pm/PackageInstallerService.java
+- packages/PackageInstaller
+- packages/DocumentsUI
+- packages/PackageInstaller/src if present
+
+Search terms:
+- isDowngradePermitted
+- INSTALL_REQUEST_DOWNGRADE
+- INSTALL_ALLOW_DOWNGRADE
+- INSTALL_FAILED_VERSION_DOWNGRADE
+- checkDowngrade
+- version downgrade
+- downgrade
+- getLongVersionCode
+- setRequestDowngrade
+- requestDowngrade
+- SessionParams
+- PackageInstaller.SessionParams
+- INSTALL_FAILED_PERMISSION_MODEL_DOWNGRADE
+
+Required fix:
+
+1. Fix PackageManagerServiceUtils.isDowngradePermitted(...)
+
+File:
+    services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+
+Current likely structure:
+    final boolean downgradeRequested =
+            (installFlags & PackageManager.INSTALL_REQUEST_DOWNGRADE) != 0;
+    if (!downgradeRequested) {
+        return false;
+    }
+
+    if (ApkSignatureVerifier.isWizeOsCorePatchEnabled()) {
+        Slog.w(TAG, "WizeOS CorePatch enabled; permitting requested downgrade");
+        return true;
+    }
+
+Problem:
+This still requires INSTALL_REQUEST_DOWNGRADE. Normal on-device installers may not provide that flag.
+
+Required behavior:
+Move the WizeOS CorePatch property check before the downgradeRequested check.
+
+Expected shape:
+
+    public static boolean isDowngradePermitted(int installFlags, boolean isAppDebuggable) {
+        // WizeOS CorePatch: allow downgrades from normal on-device installers too.
+        // This intentionally does not require INSTALL_REQUEST_DOWNGRADE when
+        // persist.wizeos.corepatch is explicitly enabled.
+        if (ApkSignatureVerifier.isWizeOsCorePatchEnabled()) {
+            Slog.w(TAG, "WizeOS CorePatch enabled; permitting downgrade");
+            return true;
+        }
+
+        final boolean downgradeRequested =
+                (installFlags & PackageManager.INSTALL_REQUEST_DOWNGRADE) != 0;
+        if (!downgradeRequested) {
+            return false;
+        }
+
+        final boolean isDebuggable = Build.IS_DEBUGGABLE || isAppDebuggable;
+        if (isDebuggable) {
+            return true;
+        }
+        return (installFlags & PackageManager.INSTALL_ALLOW_DOWNGRADE) != 0;
+    }
+
+2. Keep checkDowngrade(...) bypass
+
+File:
+    services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+
+The current patch already added WizeOS CorePatch handling in checkDowngrade(...). Keep it.
+
+Confirm this remains true:
+- If ApkSignatureVerifier.isWizeOsCorePatchEnabled() is true, checkDowngrade(...) returns without throwing INSTALL_FAILED_VERSION_DOWNGRADE.
+- If false, stock behavior remains.
+
+3. Search for other downgrade gates that still require INSTALL_REQUEST_DOWNGRADE
+
+Search the repo for:
+    INSTALL_REQUEST_DOWNGRADE
+    isDowngradePermitted
+    INSTALL_FAILED_VERSION_DOWNGRADE
+
+If another server-side path blocks normal on-device downgrades because INSTALL_REQUEST_DOWNGRADE is missing, add a property-gated WizeOS CorePatch bypass there too.
+
+Required behavior:
+- WizeOS CorePatch enabled: allow normal app version downgrade even when the installer did not request downgrade.
+- WizeOS CorePatch disabled: stock behavior.
+
+4. Do not confuse version downgrade with permission-model downgrade
+
+Search for:
+    INSTALL_FAILED_PERMISSION_MODEL_DOWNGRADE
+
+Do not bypass permission-model downgrade unless it is the final remaining blocker for ordinary APK version downgrade and clearly part of the same install path.
+
+If encountered, report it in Remaining risks / follow-ups rather than changing it blindly.
+
+5. Optional PackageInstaller inspection
+
+Inspect PackageInstaller / PackageInstallerSession paths only to confirm whether the on-device UI blocks downgrade before system_server.
+
+If PackageInstaller UI has a preflight block that prevents sending the install session:
+- Add a minimal property-gated bypass there too.
+- Use ApkSignatureVerifier.isWizeOsCorePatchEnabled() only if accessible.
+- If not accessible from that package, use SystemProperties.getBoolean("persist.wizeos.corepatch", false) with a local helper.
+- Preserve stock UI behavior when the property is false.
+
+If PackageInstaller has no preflight block, do not modify it.
+
+Acceptance criteria:
+
+A. Property off: stock behavior
+
+    adb shell setprop persist.wizeos.corepatch false
+
+Then from normal on-device file manager / package installer:
+    install older-version.apk over newer installed version
+
+Expected:
+    Stock downgrade failure.
+
+B. Property on: on-device downgrade works
+
+    adb shell setprop persist.wizeos.corepatch true
+
+Then from normal on-device file manager / package installer:
+    install older-version.apk over newer installed version
+
+Expected:
+    Downgrade succeeds even though the installer did not explicitly pass adb-style -d.
+
+C. adb downgrade still works
+
+    adb shell setprop persist.wizeos.corepatch true
+    adb install -r -d older-version.apk
+
+Expected:
+    Downgrade succeeds.
+
+D. No-regression checks
+
+    adb shell setprop persist.wizeos.corepatch false
+    adb install -r -d older-version.apk
+
+Expected:
+    Stock behavior.
+
+Static validation:
+    git diff --check
+    rg -n "isDowngradePermitted|INSTALL_REQUEST_DOWNGRADE|INSTALL_FAILED_VERSION_DOWNGRADE|persist\\.wizeos\\.corepatch|isWizeOsCorePatchEnabled" services packages core
+    frameworks-base-validate
+
+Build validation:
+If full Android/WizeOS tree is available:
+    frameworks-base-aosp-build
+
+If standalone frameworks/base checkout only:
+    Do not claim full Soong build passed. Report full build skipped because no full tree was available.
+
+Final response format:
+Return exactly these sections:
+
+Root cause:
+- Explain why the current patch only guaranteed adb -d downgrade and not normal on-device installer downgrade.
+
+Exact files changed:
+- List every file modified.
+
+Fix location:
+- List exact method(s) changed, especially PackageManagerServiceUtils.isDowngradePermitted(...).
+
+Tests:
+- List static validation and any device/manual tests performed.
+
+Commands run / pass status:
+- Include git diff --check.
+- Include rg command results.
+- Include frameworks-base-validate result.
+- Include frameworks-base-aosp-build result or skipped reason.
+
+Remaining risks / follow-ups:
+- Say whether PackageInstaller UI had any separate downgrade preflight block.
+- Say whether full Android build was available.
+- Say whether release/user property setting still needs property_contexts / sepolicy / init follow-up.

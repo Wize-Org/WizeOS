@@ -1,0 +1,365 @@
+name: Start WizeOS Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: Server address or hostname, for example 123.123.123.123
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    name: Copy and prepare WizeOS server
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SERVER: ${{ inputs.server }}
+      SSH_USER: root
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Restore key files from GitHub Secrets
+        shell: bash
+        env:
+          KEY_AVB_PEM: ${{ secrets.KEY_AVB_PEM }}
+          KEY_AVB_PKMD_BIN_B64: ${{ secrets.KEY_AVB_PKMD_BIN_B64 }}
+
+          KEY_RELEASEKEY_PK8_B64: ${{ secrets.KEY_RELEASEKEY_PK8_B64 }}
+          KEY_RELEASEKEY_X509_PEM: ${{ secrets.KEY_RELEASEKEY_X509_PEM }}
+
+          KEY_PLATFORM_PK8_B64: ${{ secrets.KEY_PLATFORM_PK8_B64 }}
+          KEY_PLATFORM_X509_PEM: ${{ secrets.KEY_PLATFORM_X509_PEM }}
+
+          KEY_SHARED_PK8_B64: ${{ secrets.KEY_SHARED_PK8_B64 }}
+          KEY_SHARED_X509_PEM: ${{ secrets.KEY_SHARED_X509_PEM }}
+
+          KEY_MEDIA_PK8_B64: ${{ secrets.KEY_MEDIA_PK8_B64 }}
+          KEY_MEDIA_X509_PEM: ${{ secrets.KEY_MEDIA_X509_PEM }}
+
+          KEY_NETWORKSTACK_PK8_B64: ${{ secrets.KEY_NETWORKSTACK_PK8_B64 }}
+          KEY_NETWORKSTACK_X509_PEM: ${{ secrets.KEY_NETWORKSTACK_X509_PEM }}
+
+          KEY_BLUETOOTH_PK8_B64: ${{ secrets.KEY_BLUETOOTH_PK8_B64 }}
+          KEY_BLUETOOTH_X509_PEM: ${{ secrets.KEY_BLUETOOTH_X509_PEM }}
+
+          KEY_SDK_SANDBOX_PK8_B64: ${{ secrets.KEY_SDK_SANDBOX_PK8_B64 }}
+          KEY_SDK_SANDBOX_X509_PEM: ${{ secrets.KEY_SDK_SANDBOX_X509_PEM }}
+
+          KEY_GMSCOMPAT_LIB_PK8_B64: ${{ secrets.KEY_GMSCOMPAT_LIB_PK8_B64 }}
+          KEY_GMSCOMPAT_LIB_X509_PEM: ${{ secrets.KEY_GMSCOMPAT_LIB_X509_PEM }}
+
+          KEY_NFC_PK8_B64: ${{ secrets.KEY_NFC_PK8_B64 }}
+          KEY_NFC_X509_PEM: ${{ secrets.KEY_NFC_X509_PEM }}
+
+          KEY_ID_ED25519: ${{ secrets.KEY_ID_ED25519 }}
+          KEY_ID_ED25519_PUB: ${{ secrets.KEY_ID_ED25519_PUB }}
+        run: |
+          set -euo pipefail
+
+          KEY_DIR="keys/mustang"
+
+          echo "=== [1/5] Restoring key files from GitHub Secrets... ==="
+
+          rm -rf keys
+          install -d -m 0700 "$KEY_DIR"
+
+          write_text_secret() {
+            local value="$1"
+            local path="$2"
+
+            if [[ -n "$value" ]]; then
+              printf '%s\n' "$value" > "$path"
+              sed -i 's/\r$//' "$path"
+              chmod 0600 "$path"
+            fi
+          }
+
+          write_b64_secret() {
+            local value="$1"
+            local path="$2"
+
+            if [[ -n "$value" ]]; then
+              printf '%s' "$value" | base64 -d > "$path"
+              chmod 0600 "$path"
+            fi
+          }
+
+          restore_apk_key() {
+            local name="$1"
+            local pk8_value="$2"
+            local cert_value="$3"
+
+            write_b64_secret "$pk8_value" "$KEY_DIR/${name}.pk8"
+            write_text_secret "$cert_value" "$KEY_DIR/${name}.x509.pem"
+            chmod 0644 "$KEY_DIR/${name}.x509.pem" 2>/dev/null || true
+          }
+
+          write_text_secret "$KEY_AVB_PEM" "$KEY_DIR/avb.pem"
+          write_b64_secret "$KEY_AVB_PKMD_BIN_B64" "$KEY_DIR/avb_pkmd.bin"
+
+          restore_apk_key releasekey "$KEY_RELEASEKEY_PK8_B64" "$KEY_RELEASEKEY_X509_PEM"
+          restore_apk_key platform "$KEY_PLATFORM_PK8_B64" "$KEY_PLATFORM_X509_PEM"
+          restore_apk_key shared "$KEY_SHARED_PK8_B64" "$KEY_SHARED_X509_PEM"
+          restore_apk_key media "$KEY_MEDIA_PK8_B64" "$KEY_MEDIA_X509_PEM"
+          restore_apk_key networkstack "$KEY_NETWORKSTACK_PK8_B64" "$KEY_NETWORKSTACK_X509_PEM"
+          restore_apk_key bluetooth "$KEY_BLUETOOTH_PK8_B64" "$KEY_BLUETOOTH_X509_PEM"
+          restore_apk_key sdk_sandbox "$KEY_SDK_SANDBOX_PK8_B64" "$KEY_SDK_SANDBOX_X509_PEM"
+          restore_apk_key gmscompat_lib "$KEY_GMSCOMPAT_LIB_PK8_B64" "$KEY_GMSCOMPAT_LIB_X509_PEM"
+          restore_apk_key nfc "$KEY_NFC_PK8_B64" "$KEY_NFC_X509_PEM"
+
+          write_text_secret "$KEY_ID_ED25519" "$KEY_DIR/id_ed25519"
+          write_text_secret "$KEY_ID_ED25519_PUB" "$KEY_DIR/id_ed25519.pub"
+          chmod 0644 "$KEY_DIR/id_ed25519.pub" 2>/dev/null || true
+
+          if [[ -s "$KEY_DIR/id_ed25519" && ! -s "$KEY_DIR/id_ed25519.pub" ]]; then
+            ssh-keygen -y -P "" -f "$KEY_DIR/id_ed25519" > "$KEY_DIR/id_ed25519.pub" || {
+              echo "::warning::Could not derive id_ed25519.pub from KEY_ID_ED25519. WizeOS can regenerate release metadata keys if needed."
+              rm -f "$KEY_DIR/id_ed25519.pub"
+            }
+            chmod 0644 "$KEY_DIR/id_ed25519.pub" 2>/dev/null || true
+          fi
+
+          missing=0
+          for f in \
+            avb.pem avb_pkmd.bin \
+            releasekey.pk8 releasekey.x509.pem \
+            platform.pk8 platform.x509.pem \
+            shared.pk8 shared.x509.pem \
+            media.pk8 media.x509.pem \
+            networkstack.pk8 networkstack.x509.pem \
+            bluetooth.pk8 bluetooth.x509.pem \
+            sdk_sandbox.pk8 sdk_sandbox.x509.pem \
+            gmscompat_lib.pk8 gmscompat_lib.x509.pem \
+            nfc.pk8 nfc.x509.pem
+          do
+            if [[ ! -s "$KEY_DIR/$f" ]]; then
+              echo "::error::Missing restored key file: $KEY_DIR/$f"
+              missing=1
+            fi
+          done
+
+          if [[ "$missing" = "1" ]]; then
+            echo "::error::One or more required key secrets are missing or empty."
+            exit 1
+          fi
+
+          find keys -type d -exec chmod 0700 {} \;
+          find keys -type f -exec chmod 0600 {} \;
+          find keys -name '*.x509.pem' -exec chmod 0644 {} \;
+          find keys -name '*.pub' -exec chmod 0644 {} \;
+
+          echo "Restored key files:"
+          find "$KEY_DIR" -maxdepth 1 -type f -printf '  %f\n' | sort
+
+      - name: Check local files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== [2/5] Checking local files... ==="
+
+          if [[ ! "$SERVER" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+            echo "::error::Invalid server value. Use only hostname/IP characters, without spaces."
+            exit 1
+          fi
+
+          if [[ ! -d wizeos ]]; then
+            echo "::error::Missing local wizeos folder. Put this workflow in the same repository that contains the modular wizeos folder."
+            exit 1
+          fi
+
+          if [[ ! -f wizeos/wizeos.sh ]]; then
+            echo "::error::Missing wizeos/wizeos.sh"
+            exit 1
+          fi
+
+          if [[ ! -d keys/mustang ]]; then
+            echo "::error::Missing keys/mustang. The key restore step did not create it."
+            exit 1
+          fi
+
+          [[ -f Magisk.apk ]] || echo "::warning::Magisk.apk not found. ROOT=magisk builds will fail unless uploaded manually."
+          [[ -f KernelSU_Next.apk ]] || echo "::warning::KernelSU_Next.apk not found. ROOT=ksunext manager bundling will fail unless uploaded manually."
+          [[ -f Zygisk-Next.zip ]] || echo "::warning::Zygisk-Next.zip not found. ROOT=ksunext Zygisk bundling will fail unless uploaded manually."
+          [[ -f susfs4ksu.zip ]] || echo "::warning::susfs4ksu.zip not found. KSUNEXT_SUSFS=1 module bundling will fail unless uploaded manually."
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${SERVER_SSH_KEY}" ]]; then
+            echo "::error::Missing GitHub secret SERVER_SSH_KEY. Add the private SSH key that can login to root@$SERVER."
+            exit 1
+          fi
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/id_server
+          sed -i 's/\r$//' ~/.ssh/id_server
+          chmod 600 ~/.ssh/id_server
+
+          ssh-keyscan -H "$SERVER" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          cat > ~/.ssh/config <<EOF
+          Host wizeos-server
+            HostName $SERVER
+            User $SSH_USER
+            IdentityFile ~/.ssh/id_server
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+          ssh wizeos-server "echo SSH connection OK"
+
+      - name: Upload keys to server
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== [3/5] Uploading keys to /root/wizeos-keys/mustang... ==="
+
+          if [[ ! -d keys/mustang ]]; then
+            echo "::error::Missing keys/mustang folder"
+            exit 1
+          fi
+
+          ssh wizeos-server "
+            set -e
+            rm -rf /root/wizeos-keys/mustang
+            install -d -m 0700 /root/wizeos-keys
+          "
+
+          tar -C keys -czf - mustang | ssh wizeos-server "
+            set -e
+            tar -xzf - -C /root/wizeos-keys
+            chmod -R go-rwx /root/wizeos-keys
+            find /root/wizeos-keys -type d -exec chmod 0700 {} \\;
+            find /root/wizeos-keys -type f -exec chmod 0600 {} \\;
+            find /root/wizeos-keys -name '*.x509.pem' -exec chmod 0644 {} \\;
+            find /root/wizeos-keys -name '*.pub' -exec chmod 0644 {} \\;
+          "
+
+          ssh wizeos-server "test -d /root/wizeos-keys/mustang && echo 'Keys uploaded OK'"
+
+      - name: Copy modular WizeOS files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== [4/5] Copying modular WizeOS files to root@$SERVER... ==="
+
+          ssh wizeos-server "mkdir -p /root/wizeos"
+          scp -r wizeos wizeos-server:/root/
+
+          copy_if_exists() {
+            local src="$1"
+            local dst="$2"
+            if [[ -e "$src" ]]; then
+              scp -r "$src" "wizeos-server:$dst"
+            fi
+          }
+
+          copy_if_exists Magisk.apk /root/Magisk.apk
+          copy_if_exists KernelSU_Next.apk /root/KernelSU_Next.apk
+          copy_if_exists Zygisk-Next.zip /root/Zygisk-Next.zip
+          copy_if_exists susfs4ksu.zip /root/susfs4ksu.zip
+
+          # Keys are restored from GitHub Secrets and uploaded only to:
+          # /root/wizeos-keys/mustang
+          # Do not copy them to /root/keys.
+
+          # Optional external patches folder. If you keep patches beside the workflow repo root,
+          # copy it into the modular script folder on the server.
+          copy_if_exists patches /root/wizeos/
+
+      - name: Prepare server shell
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== [5/5] Preparing server shell... ==="
+
+          ssh wizeos-server <<'REMOTE'
+          set -e
+          apt-get update >/dev/null 2>&1
+          DEBIAN_FRONTEND=noninteractive apt-get install -y dos2unix unzip lftp >/dev/null 2>&1
+          find /root/wizeos -type f \( -name '*.sh' -o -name '*.env' \) -exec dos2unix {} \; >/dev/null 2>&1 || true
+          chmod 0700 /root/wizeos/wizeos.sh
+          chmod -R go-rwx /root/wizeos
+          chmod -R go-rwx /root/wizeos-keys 2>/dev/null || true
+          chmod 0600 /root/Magisk.apk /root/KernelSU_Next.apk /root/Zygisk-Next.zip /root/susfs4ksu.zip 2>/dev/null || true
+          REMOTE
+
+      - name: Print WizeOS commands
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## WizeOS modular scripts are ready
+
+          Signing keys were restored from GitHub Secrets and uploaded to:
+
+          ```text
+          /root/wizeos-keys/mustang
+          ```
+
+          SSH to the server and run one of these commands from `/root`.
+
+          ### KernelSU Next
+
+          ```bash
+          TAG=2026062800 ACTION=all USE_WIZEOS_MANIFEST=1 MANIFEST_BRANCH=17 MANIFEST_FILE=wizeos.xml START_OVER=1 CLEAN_OUT=1 SIGNED=1 ROOT=ksunext KSUNEXT_SUSFS=0 LSPOSED_COMPAT=1 bash /root/wizeos/wizeos.sh
+          ```
+
+          ### KernelSU Next + SUSFS
+
+          ```bash
+          TAG=2026062800 ACTION=all USE_WIZEOS_MANIFEST=1 MANIFEST_BRANCH=17 MANIFEST_FILE=wizeos.xml START_OVER=1 CLEAN_OUT=1 SIGNED=1 ROOT=ksunext KSUNEXT_SUSFS=1 SUSFS_MODULE_ZIP=/root/susfs4ksu.zip LSPOSED_COMPAT=1 bash /root/wizeos/wizeos.sh
+          ```
+
+          Required key secrets:
+
+          ```text
+          KEY_AVB_PEM
+          KEY_AVB_PKMD_BIN_B64
+          KEY_RELEASEKEY_PK8_B64
+          KEY_RELEASEKEY_X509_PEM
+          KEY_PLATFORM_PK8_B64
+          KEY_PLATFORM_X509_PEM
+          KEY_SHARED_PK8_B64
+          KEY_SHARED_X509_PEM
+          KEY_MEDIA_PK8_B64
+          KEY_MEDIA_X509_PEM
+          KEY_NETWORKSTACK_PK8_B64
+          KEY_NETWORKSTACK_X509_PEM
+          KEY_BLUETOOTH_PK8_B64
+          KEY_BLUETOOTH_X509_PEM
+          KEY_SDK_SANDBOX_PK8_B64
+          KEY_SDK_SANDBOX_X509_PEM
+          KEY_GMSCOMPAT_LIB_PK8_B64
+          KEY_GMSCOMPAT_LIB_X509_PEM
+          KEY_NFC_PK8_B64
+          KEY_NFC_X509_PEM
+          ```
+
+          Optional release metadata key secrets:
+
+          ```text
+          KEY_ID_ED25519
+          KEY_ID_ED25519_PUB
+          ```
+          EOF
+
+          echo "WizeOS modular scripts and keys are ready on root@$SERVER. See the job summary for run commands."

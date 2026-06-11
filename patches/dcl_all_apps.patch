@@ -1,0 +1,28 @@
+#  Allow configuration of DCL settings for all apps
+diff --git i/core/java/android/ext/settings/app/AswRestrictMemoryDynCodeLoading.java w/core/java/android/ext/settings/app/AswRestrictMemoryDynCodeLoading.java
+index 2dd6e8da635e..4360cf09f3a7 100644
+--- i/core/java/android/ext/settings/app/AswRestrictMemoryDynCodeLoading.java
++++ w/core/java/android/ext/settings/app/AswRestrictMemoryDynCodeLoading.java
+@@ -37,23 +37,6 @@ public class AswRestrictMemoryDynCodeLoading extends AppSwitch {
+     @Override
+     public Boolean getImmutableValue(Context ctx, int userId, ApplicationInfo appInfo,
+                                      GosPackageState ps, StateInfo si) {
+-        if (appInfo.isSystemApp()) {
+-            if (shouldAllowByDefaultToSystemPkg(ctx, appInfo.packageName)) {
+-                // allow manual restriction
+-                return null;
+-            }
+-            if (SELinuxFlags.isSystemAppSepolicyWeakeningAllowed()) {
+-                return null;
+-            }
+-            si.immutabilityReason = IR_IS_SYSTEM_APP;
+-            return true;
+-        }
+-
+-        if (ps.hasFlag(GosPackageStateFlag.ENABLE_EXPLOIT_PROTECTION_COMPAT_MODE)) {
+-            si.immutabilityReason = IR_EXPLOIT_PROTECTION_COMPAT_MODE;
+-            return false;
+-        }
+-
+         return null;
+     }
