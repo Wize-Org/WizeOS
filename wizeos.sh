@@ -45,6 +45,9 @@ AVBROOT_PASS_OTA_FILE="${AVBROOT_PASS_OTA_FILE:-}"
 START_OVER="${START_OVER:-0}"
 # Optional: set KEYS_SOURCE=/path/to/keys if your keys folder is not already in the source tree.
 KEYS_SOURCE="${KEYS_SOURCE:-}"
+# Repo/Git need a committer identity during repo init/re-init. Override if desired.
+GIT_USER_NAME="${GIT_USER_NAME:-WizeOS Builder}"
+GIT_USER_EMAIL="${GIT_USER_EMAIL:-builder@wizeos.local}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "ERROR: Run this setup script as root. It will run GrapheneOS build steps as ${BUILD_USER}."
@@ -229,6 +232,8 @@ if [ "${ROOT}" = "magisk" ]; then
   echo "    avbroot install path: ${AVBROOT_INSTALL_PATH}"
 fi
 echo "    Keys source: ${KEYS_SOURCE:-auto-detect}"
+echo "    Git user.name: ${GIT_USER_NAME}"
+echo "    Git user.email: ${GIT_USER_EMAIL}"
 
 log "Allowing nsjail to use unprivileged user namespaces on Ubuntu 24.04"
 # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor.
@@ -477,36 +482,11 @@ if ! grep -q '.bashrc.grapheneos' "/home/${BUILD_USER}/.bashrc" 2>/dev/null; the
   chown "${BUILD_USER}:${BUILD_USER}" "/home/${BUILD_USER}/.bashrc"
 fi
 
-log "Running GrapheneOS source sync, build, and signed release as ${BUILD_USER}, not root"
-sudo -H -u "${BUILD_USER}" env \
-  HOME="/home/${BUILD_USER}" \
-  USER="${BUILD_USER}" \
-  LOGNAME="${BUILD_USER}" \
-  XDG_CONFIG_HOME="/home/${BUILD_USER}/.config" \
-  XDG_CACHE_HOME="/home/${BUILD_USER}/.cache" \
-  GIT_CONFIG_NOSYSTEM=1 \
-  DEVICE="${DEVICE}" \
-  TAG="${TAG}" \
-  BUILD_NUMBER="${BUILD_NUMBER}" \
-  CLEAN_OUT="${CLEAN_OUT}" \
-  JOBS="${JOBS}" \
-  BASE_DIR="${BASE_DIR}" \
-  WORKDIR="${WORKDIR}" \
-  SYNC_JOBS="${SYNC_JOBS}" \
-  SIGNED="${SIGNED}" \
-  ROOT="${ROOT}" \
-  MAGISK_APK_WORKDIR="${MAGISK_APK_WORKDIR:-}" \
-  MAGISK_PREINIT_DEVICE="${MAGISK_PREINIT_DEVICE}" \
-  AVBROOT="${AVBROOT}" \
-  AVBROOT_AUTO_INSTALL="${AVBROOT_AUTO_INSTALL}" \
-  AVBROOT_VERSION="${AVBROOT_VERSION}" \
-  AVBROOT_INSTALL_PATH="${AVBROOT_INSTALL_PATH}" \
-  AVBROOT_AVB_KEY="${AVBROOT_AVB_KEY:-}" \
-  AVBROOT_OTA_KEY="${AVBROOT_OTA_KEY:-}" \
-  AVBROOT_OTA_CERT="${AVBROOT_OTA_CERT:-}" \
-  AVBROOT_PASS_AVB_FILE="${AVBROOT_PASS_AVB_FILE:-}" \
-  AVBROOT_PASS_OTA_FILE="${AVBROOT_PASS_OTA_FILE:-}" \
-  bash <<'BUILDER_SCRIPT'
+# Write the builder commands to a real script file instead of feeding them through
+# sudo via a heredoc. This keeps stdin attached to the terminal so GrapheneOS
+# signing tools, OpenSSL, and avbroot can prompt for encrypted key passphrases.
+BUILDER_RUNNER="/home/${BUILD_USER}/run-wizeos-builder-${TAG}.sh"
+cat >"${BUILDER_RUNNER}" <<'BUILDER_SCRIPT'
 set -eo pipefail
 export PATH=$PATH:/sbin:/usr/sbin:/usr/local/sbin
 export HOME="${HOME:-/home/builder}"
@@ -524,6 +504,12 @@ printf 'HOME=%s\n' "$HOME"
 printf 'PWD=%s\n' "$(pwd)"
 node -v
 yarn --version
+
+echo "==> Configuring Git identity for repo"
+git config --global user.name "${GIT_USER_NAME:-WizeOS Builder}"
+git config --global user.email "${GIT_USER_EMAIL:-builder@wizeos.local}"
+# Avoid repo init asking interactively for identity on existing checkouts.
+git config --global color.ui false
 
 cd "$BASE_DIR"
 mkdir -p "$WORKDIR"
@@ -635,7 +621,10 @@ printf 'BUILD_NUMBER=%s\n' "$BUILD_NUMBER"
 
 if [ "${SIGNED}" = "1" ]; then
   echo "==> Generating signed release for ${DEVICE}"
-  script/generate-release.sh "$DEVICE" "$BUILD_NUMBER"
+  mkdir -p "releases/${BUILD_NUMBER}"
+  GENERATE_RELEASE_LOG="releases/${BUILD_NUMBER}/generate-release-${DEVICE}-${BUILD_NUMBER}.log"
+  echo "==> Logging generate-release output to ${GENERATE_RELEASE_LOG}"
+  script/generate-release.sh "$DEVICE" "$BUILD_NUMBER" 2>&1 | tee "${GENERATE_RELEASE_LOG}"
 
   RELEASE_DIR="releases/${BUILD_NUMBER}/release-${DEVICE}-${BUILD_NUMBER}"
   echo "==> Signed release finished"
@@ -702,6 +691,41 @@ else
   echo "==> SIGNED=0, signed release generation skipped"
 fi
 BUILDER_SCRIPT
+chown "${BUILD_USER}:${BUILD_USER}" "${BUILDER_RUNNER}"
+chmod 0700 "${BUILDER_RUNNER}"
+
+log "Running GrapheneOS source sync, build, and signed release as ${BUILD_USER}, not root"
+sudo -H -u "${BUILD_USER}" env \
+  HOME="/home/${BUILD_USER}" \
+  USER="${BUILD_USER}" \
+  LOGNAME="${BUILD_USER}" \
+  XDG_CONFIG_HOME="/home/${BUILD_USER}/.config" \
+  XDG_CACHE_HOME="/home/${BUILD_USER}/.cache" \
+  GIT_CONFIG_NOSYSTEM=1 \
+  GIT_USER_NAME="${GIT_USER_NAME}" \
+  GIT_USER_EMAIL="${GIT_USER_EMAIL}" \
+  DEVICE="${DEVICE}" \
+  TAG="${TAG}" \
+  BUILD_NUMBER="${BUILD_NUMBER}" \
+  CLEAN_OUT="${CLEAN_OUT}" \
+  JOBS="${JOBS}" \
+  BASE_DIR="${BASE_DIR}" \
+  WORKDIR="${WORKDIR}" \
+  SYNC_JOBS="${SYNC_JOBS}" \
+  SIGNED="${SIGNED}" \
+  ROOT="${ROOT}" \
+  MAGISK_APK_WORKDIR="${MAGISK_APK_WORKDIR:-}" \
+  MAGISK_PREINIT_DEVICE="${MAGISK_PREINIT_DEVICE}" \
+  AVBROOT="${AVBROOT}" \
+  AVBROOT_AUTO_INSTALL="${AVBROOT_AUTO_INSTALL}" \
+  AVBROOT_VERSION="${AVBROOT_VERSION}" \
+  AVBROOT_INSTALL_PATH="${AVBROOT_INSTALL_PATH}" \
+  AVBROOT_AVB_KEY="${AVBROOT_AVB_KEY:-}" \
+  AVBROOT_OTA_KEY="${AVBROOT_OTA_KEY:-}" \
+  AVBROOT_OTA_CERT="${AVBROOT_OTA_CERT:-}" \
+  AVBROOT_PASS_AVB_FILE="${AVBROOT_PASS_AVB_FILE:-}" \
+  AVBROOT_PASS_OTA_FILE="${AVBROOT_PASS_OTA_FILE:-}" \
+  bash "${BUILDER_RUNNER}"
 
 if [ "${SIGNED}" = "1" ]; then
   if [ "${ROOT}" = "magisk" ]; then
