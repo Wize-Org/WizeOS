@@ -212,6 +212,74 @@ PY
   "${AVBROOT}" --version
 }
 
+fix_release_ssh_key_permissions() {
+  # GrapheneOS generate-release.sh expects the release SSH signing key at
+  # keys/id_ed25519. Some key backups place it under keys/${DEVICE}/, so copy it
+  # up if needed, then enforce OpenSSH-safe permissions. OpenSSH refuses private
+  # keys that are group/world-readable, which causes generate-release.sh to stop
+  # after producing the factory image.
+  local keys_dir device_keys_dir private_key public_key device_private_key device_public_key
+  keys_dir="${WORKDIR}/keys"
+  device_keys_dir="${keys_dir}/${DEVICE}"
+  private_key="${keys_dir}/id_ed25519"
+  public_key="${keys_dir}/id_ed25519.pub"
+  device_private_key="${device_keys_dir}/id_ed25519"
+  device_public_key="${device_keys_dir}/id_ed25519.pub"
+
+  if [ ! -d "${keys_dir}" ]; then
+    return 0
+  fi
+
+  log "Fixing release SSH key placement and permissions"
+
+  if [ -f "${device_private_key}" ] && [ ! -f "${private_key}" ]; then
+    echo "    Copying ${device_private_key} to ${private_key}"
+    cp -a "${device_private_key}" "${private_key}"
+  fi
+
+  if [ -f "${device_public_key}" ] && [ ! -f "${public_key}" ]; then
+    echo "    Copying ${device_public_key} to ${public_key}"
+    cp -a "${device_public_key}" "${public_key}"
+  fi
+
+  if [ -L "${private_key}" ] && [ ! -e "${private_key}" ]; then
+    echo "ERROR: ${private_key} is a broken symlink. Replace it with the real private key."
+    exit 1
+  fi
+
+  chown -R "${BUILD_USER}:${BUILD_USER}" "${keys_dir}"
+  chmod 0700 "${keys_dir}" 2>/dev/null || true
+  if [ -d "${device_keys_dir}" ]; then
+    chmod 0700 "${device_keys_dir}" 2>/dev/null || true
+  fi
+
+  if [ -f "${private_key}" ]; then
+    chown "${BUILD_USER}:${BUILD_USER}" "${private_key}"
+    chmod 0600 "${private_key}"
+    echo "    Fixed private key permissions: ${private_key}"
+  elif [ "${SIGNED}" = "1" ]; then
+    echo "WARNING: ${private_key} is missing. generate-release.sh may fail when signing release metadata."
+    echo "         Create it with: sudo -H -u ${BUILD_USER} ssh-keygen -t ed25519 -f ${private_key} -N \"\""
+  fi
+
+  if [ -f "${public_key}" ]; then
+    chown "${BUILD_USER}:${BUILD_USER}" "${public_key}"
+    chmod 0644 "${public_key}"
+    echo "    Fixed public key permissions: ${public_key}"
+  fi
+
+  if [ -f "${device_private_key}" ]; then
+    chown "${BUILD_USER}:${BUILD_USER}" "${device_private_key}"
+    chmod 0600 "${device_private_key}"
+  fi
+
+  if [ -f "${device_public_key}" ]; then
+    chown "${BUILD_USER}:${BUILD_USER}" "${device_public_key}"
+    chmod 0644 "${device_public_key}"
+  fi
+}
+
+
 log "GrapheneOS build setup"
 echo "    Device: ${DEVICE}"
 echo "    Tag: ${TAG}"
@@ -370,6 +438,9 @@ else
   echo "    SIGNED=0, skipping keys preparation and signed release generation."
 fi
 chown -R "${BUILD_USER}:${BUILD_USER}" "${WORKDIR}" "/home/${BUILD_USER}"
+if [ "${SIGNED}" = "1" ]; then
+  fix_release_ssh_key_permissions
+fi
 
 # Prepare Magisk/avbroot inputs outside the builder heredoc so prompts do not consume script stdin.
 MAGISK_APK_WORKDIR=""
@@ -471,6 +542,7 @@ if [ "${ROOT}" = "magisk" ]; then
 
   chown -R "${BUILD_USER}:${BUILD_USER}" "${MAGISK_DIR}" "${WORKDIR}/keys"
   chmod 0600 "${AVBROOT_OTA_KEY}" 2>/dev/null || true
+  fix_release_ssh_key_permissions
 fi
 
 cat >/home/${BUILD_USER}/.bashrc.grapheneos <<'EOS'
