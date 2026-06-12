@@ -102,6 +102,65 @@ log() {
   echo "==> $*"
 }
 
+
+fix_release_ssh_key_permissions() {
+  # GrapheneOS release tooling expects an SSH signing key at keys/id_ed25519.
+  # If the key was stored under keys/${DEVICE}/, copy it to the top-level keys/ path.
+  # OpenSSH refuses to use private keys that are readable by other users, so enforce 0600.
+  local top_private="${WORKDIR}/keys/id_ed25519"
+  local top_public="${WORKDIR}/keys/id_ed25519.pub"
+  local device_private="${WORKDIR}/keys/${DEVICE}/id_ed25519"
+  local device_public="${WORKDIR}/keys/${DEVICE}/id_ed25519.pub"
+
+  if [ ! -d "${WORKDIR}/keys" ]; then
+    return 0
+  fi
+
+  if [ -L "${top_private}" ] && [ ! -e "${top_private}" ]; then
+    echo "ERROR: ${top_private} is a broken symlink. Replace it with the real private key."
+    exit 1
+  fi
+
+  if [ ! -f "${top_private}" ] && [ -f "${device_private}" ]; then
+    echo "    Copying device SSH private key to top-level keys/id_ed25519"
+    cp -a "${device_private}" "${top_private}"
+  fi
+
+  if [ ! -f "${top_public}" ] && [ -f "${device_public}" ]; then
+    echo "    Copying device SSH public key to top-level keys/id_ed25519.pub"
+    cp -a "${device_public}" "${top_public}"
+  fi
+
+  if [ -f "${top_private}" ]; then
+    chown "${BUILD_USER}:${BUILD_USER}" "${top_private}"
+    chmod 0600 "${top_private}"
+  else
+    echo "WARNING: ${top_private} is missing. generate-release.sh may fail when signing release metadata."
+  fi
+
+  if [ -f "${top_public}" ]; then
+    chown "${BUILD_USER}:${BUILD_USER}" "${top_public}"
+    chmod 0644 "${top_public}"
+  fi
+
+  if [ -f "${device_private}" ]; then
+    chown "${BUILD_USER}:${BUILD_USER}" "${device_private}"
+    chmod 0600 "${device_private}"
+  fi
+
+  if [ -f "${device_public}" ]; then
+    chown "${BUILD_USER}:${BUILD_USER}" "${device_public}"
+    chmod 0644 "${device_public}"
+  fi
+
+  # Previous failed generate-release runs may have copied keys into releases/*/keys
+  # with mode 0644. Fix those too before resuming.
+  if [ -d "${WORKDIR}/releases" ]; then
+    find "${WORKDIR}/releases" -path '*/keys/id_ed25519' -type f -exec chown "${BUILD_USER}:${BUILD_USER}" {} \; -exec chmod 0600 {} \;
+    find "${WORKDIR}/releases" -path '*/keys/id_ed25519.pub' -type f -exec chown "${BUILD_USER}:${BUILD_USER}" {} \; -exec chmod 0644 {} \;
+  fi
+}
+
 install_avbroot() {
   local target
   case "$(uname -m)" in
@@ -211,74 +270,6 @@ PY
   AVBROOT="${AVBROOT_INSTALL_PATH}"
   "${AVBROOT}" --version
 }
-
-fix_release_ssh_key_permissions() {
-  # GrapheneOS generate-release.sh expects the release SSH signing key at
-  # keys/id_ed25519. Some key backups place it under keys/${DEVICE}/, so copy it
-  # up if needed, then enforce OpenSSH-safe permissions. OpenSSH refuses private
-  # keys that are group/world-readable, which causes generate-release.sh to stop
-  # after producing the factory image.
-  local keys_dir device_keys_dir private_key public_key device_private_key device_public_key
-  keys_dir="${WORKDIR}/keys"
-  device_keys_dir="${keys_dir}/${DEVICE}"
-  private_key="${keys_dir}/id_ed25519"
-  public_key="${keys_dir}/id_ed25519.pub"
-  device_private_key="${device_keys_dir}/id_ed25519"
-  device_public_key="${device_keys_dir}/id_ed25519.pub"
-
-  if [ ! -d "${keys_dir}" ]; then
-    return 0
-  fi
-
-  log "Fixing release SSH key placement and permissions"
-
-  if [ -f "${device_private_key}" ] && [ ! -f "${private_key}" ]; then
-    echo "    Copying ${device_private_key} to ${private_key}"
-    cp -a "${device_private_key}" "${private_key}"
-  fi
-
-  if [ -f "${device_public_key}" ] && [ ! -f "${public_key}" ]; then
-    echo "    Copying ${device_public_key} to ${public_key}"
-    cp -a "${device_public_key}" "${public_key}"
-  fi
-
-  if [ -L "${private_key}" ] && [ ! -e "${private_key}" ]; then
-    echo "ERROR: ${private_key} is a broken symlink. Replace it with the real private key."
-    exit 1
-  fi
-
-  chown -R "${BUILD_USER}:${BUILD_USER}" "${keys_dir}"
-  chmod 0700 "${keys_dir}" 2>/dev/null || true
-  if [ -d "${device_keys_dir}" ]; then
-    chmod 0700 "${device_keys_dir}" 2>/dev/null || true
-  fi
-
-  if [ -f "${private_key}" ]; then
-    chown "${BUILD_USER}:${BUILD_USER}" "${private_key}"
-    chmod 0600 "${private_key}"
-    echo "    Fixed private key permissions: ${private_key}"
-  elif [ "${SIGNED}" = "1" ]; then
-    echo "WARNING: ${private_key} is missing. generate-release.sh may fail when signing release metadata."
-    echo "         Create it with: sudo -H -u ${BUILD_USER} ssh-keygen -t ed25519 -f ${private_key} -N \"\""
-  fi
-
-  if [ -f "${public_key}" ]; then
-    chown "${BUILD_USER}:${BUILD_USER}" "${public_key}"
-    chmod 0644 "${public_key}"
-    echo "    Fixed public key permissions: ${public_key}"
-  fi
-
-  if [ -f "${device_private_key}" ]; then
-    chown "${BUILD_USER}:${BUILD_USER}" "${device_private_key}"
-    chmod 0600 "${device_private_key}"
-  fi
-
-  if [ -f "${device_public_key}" ]; then
-    chown "${BUILD_USER}:${BUILD_USER}" "${device_public_key}"
-    chmod 0644 "${device_public_key}"
-  fi
-}
-
 
 log "GrapheneOS build setup"
 echo "    Device: ${DEVICE}"
@@ -438,9 +429,8 @@ else
   echo "    SIGNED=0, skipping keys preparation and signed release generation."
 fi
 chown -R "${BUILD_USER}:${BUILD_USER}" "${WORKDIR}" "/home/${BUILD_USER}"
-if [ "${SIGNED}" = "1" ]; then
-  fix_release_ssh_key_permissions
-fi
+log "Fixing release SSH key permissions"
+fix_release_ssh_key_permissions
 
 # Prepare Magisk/avbroot inputs outside the builder heredoc so prompts do not consume script stdin.
 MAGISK_APK_WORKDIR=""
@@ -542,7 +532,6 @@ if [ "${ROOT}" = "magisk" ]; then
 
   chown -R "${BUILD_USER}:${BUILD_USER}" "${MAGISK_DIR}" "${WORKDIR}/keys"
   chmod 0600 "${AVBROOT_OTA_KEY}" 2>/dev/null || true
-  fix_release_ssh_key_permissions
 fi
 
 cat >/home/${BUILD_USER}/.bashrc.grapheneos <<'EOS'
@@ -692,11 +681,32 @@ fi
 printf 'BUILD_NUMBER=%s\n' "$BUILD_NUMBER"
 
 if [ "${SIGNED}" = "1" ]; then
+
+  echo "==> Fixing release SSH key permissions before generate-release"
+  if [ -f "keys/${DEVICE}/id_ed25519" ] && [ ! -f "keys/id_ed25519" ]; then
+    cp -a "keys/${DEVICE}/id_ed25519" "keys/id_ed25519"
+  fi
+  if [ -f "keys/${DEVICE}/id_ed25519.pub" ] && [ ! -f "keys/id_ed25519.pub" ]; then
+    cp -a "keys/${DEVICE}/id_ed25519.pub" "keys/id_ed25519.pub"
+  fi
+  if [ -f "keys/id_ed25519" ]; then
+    chmod 0600 "keys/id_ed25519"
+  else
+    echo "WARNING: keys/id_ed25519 is missing. generate-release.sh may fail when signing release metadata."
+  fi
+  if [ -f "keys/id_ed25519.pub" ]; then
+    chmod 0644 "keys/id_ed25519.pub"
+  fi
+  if [ -d "releases/${BUILD_NUMBER}" ]; then
+    find "releases/${BUILD_NUMBER}" -path '*/keys/id_ed25519' -type f -exec chmod 0600 {} \;
+    find "releases/${BUILD_NUMBER}" -path '*/keys/id_ed25519.pub' -type f -exec chmod 0644 {} \;
+  fi
+
   echo "==> Generating signed release for ${DEVICE}"
   mkdir -p "releases/${BUILD_NUMBER}"
   GENERATE_RELEASE_LOG="releases/${BUILD_NUMBER}/generate-release-${DEVICE}-${BUILD_NUMBER}.log"
   echo "==> Logging generate-release output to ${GENERATE_RELEASE_LOG}"
-  script/generate-release.sh "$DEVICE" "$BUILD_NUMBER" 2>&1 | tee "${GENERATE_RELEASE_LOG}"
+  ( umask 077; script/generate-release.sh "$DEVICE" "$BUILD_NUMBER" ) 2>&1 | tee "${GENERATE_RELEASE_LOG}"
 
   RELEASE_DIR="releases/${BUILD_NUMBER}/release-${DEVICE}-${BUILD_NUMBER}"
   echo "==> Signed release finished"
