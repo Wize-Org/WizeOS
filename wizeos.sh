@@ -27,6 +27,12 @@ MAGISK_APK="${MAGISK_APK:-}"
 MAGISK_PREINIT_DEVICE="${MAGISK_PREINIT_DEVICE:-sda10}"
 # Required only when ROOT=magisk. avbroot can be an absolute path or a command in PATH.
 AVBROOT="${AVBROOT:-avbroot}"
+# AVBROOT_AUTO_INSTALL=1 downloads and installs avbroot automatically if ROOT=magisk and avbroot is missing.
+AVBROOT_AUTO_INSTALL="${AVBROOT_AUTO_INSTALL:-1}"
+# Use latest by default, or set AVBROOT_VERSION=3.30.1 / v3.30.1 to pin a specific version.
+AVBROOT_VERSION="${AVBROOT_VERSION:-latest}"
+# Install location used only by automatic avbroot installation.
+AVBROOT_INSTALL_PATH="${AVBROOT_INSTALL_PATH:-/usr/local/bin/avbroot}"
 # Optional overrides for avbroot keys. Defaults are derived from keys/${DEVICE}/.
 AVBROOT_AVB_KEY="${AVBROOT_AVB_KEY:-}"
 AVBROOT_OTA_KEY="${AVBROOT_OTA_KEY:-}"
@@ -69,6 +75,14 @@ case "${ROOT}" in
     ;;
 esac
 
+case "${AVBROOT_AUTO_INSTALL}" in
+  0|1) ;;
+  *)
+    echo "ERROR: AVBROOT_AUTO_INSTALL must be 1 to auto-install avbroot or 0 to disable it. Current value: ${AVBROOT_AUTO_INSTALL}"
+    exit 1
+    ;;
+esac
+
 if [ "${ROOT}" = "magisk" ] && [ "${SIGNED}" != "1" ]; then
   echo "ERROR: ROOT=magisk requires SIGNED=1 because avbroot must patch a signed OTA."
   exit 1
@@ -83,6 +97,116 @@ export DEBIAN_FRONTEND=noninteractive
 
 log() {
   echo "==> $*"
+}
+
+install_avbroot() {
+  local target
+  case "$(uname -m)" in
+    x86_64|amd64)
+      target="x86_64-unknown-linux-gnu"
+      ;;
+    aarch64|arm64)
+      target="aarch64-unknown-linux-gnu"
+      ;;
+    *)
+      echo "ERROR: Unsupported host architecture for automatic avbroot install: $(uname -m)"
+      echo "       Install avbroot manually and run with AVBROOT=/absolute/path/to/avbroot."
+      return 1
+      ;;
+  esac
+
+  log "avbroot not found. Auto-installing avbroot ${AVBROOT_VERSION} for ${target}"
+  echo "    Install path: ${AVBROOT_INSTALL_PATH}"
+
+  local tmpdir asset_url asset_name asset_path extract_dir found_avbroot install_dir
+  tmpdir="$(mktemp -d)"
+  extract_dir="${tmpdir}/extract"
+  mkdir -p "${extract_dir}"
+
+  asset_url="$(python3 - "${AVBROOT_VERSION}" "${target}" <<'PY'
+import json
+import sys
+import urllib.request
+
+version = sys.argv[1]
+target = sys.argv[2]
+base = "https://api.github.com/repos/chenxiaolong/avbroot/releases"
+if version == "latest":
+    url = base + "/latest"
+else:
+    tag = version if version.startswith("v") else "v" + version
+    url = base + "/tags/" + tag
+
+req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "wizeos-build-script"})
+with urllib.request.urlopen(req, timeout=60) as response:
+    release = json.load(response)
+
+assets = release.get("assets", [])
+candidates = []
+for asset in assets:
+    name = asset.get("name", "")
+    download = asset.get("browser_download_url", "")
+    if target in name and download:
+        candidates.append((name, download))
+
+preferred_suffixes = (".zip", ".tar.xz", ".tar.gz", ".tgz")
+for suffix in preferred_suffixes:
+    for name, download in candidates:
+        if name.endswith(suffix):
+            print(download)
+            sys.exit(0)
+
+if candidates:
+    print(candidates[0][1])
+    sys.exit(0)
+
+available = ", ".join(asset.get("name", "") for asset in assets)
+raise SystemExit(f"No avbroot release asset found for {target}. Available assets: {available}")
+PY
+)"
+
+  asset_name="$(basename "${asset_url%%\?*}")"
+  asset_path="${tmpdir}/${asset_name}"
+
+  echo "    Download: ${asset_url}"
+  curl -fL -o "${asset_path}" "${asset_url}"
+
+  case "${asset_name}" in
+    *.zip)
+      unzip -q "${asset_path}" -d "${extract_dir}"
+      ;;
+    *.tar.xz)
+      tar -xJf "${asset_path}" -C "${extract_dir}"
+      ;;
+    *.tar.gz|*.tgz)
+      tar -xzf "${asset_path}" -C "${extract_dir}"
+      ;;
+    *)
+      mkdir -p "${extract_dir}/single"
+      cp "${asset_path}" "${extract_dir}/single/avbroot"
+      chmod +x "${extract_dir}/single/avbroot"
+      ;;
+  esac
+
+  found_avbroot="$(find "${extract_dir}" -type f -name avbroot -perm /111 | head -n 1)"
+  if [ -z "${found_avbroot}" ]; then
+    found_avbroot="$(find "${extract_dir}" -type f -name avbroot | head -n 1)"
+  fi
+  if [ -z "${found_avbroot}" ]; then
+    echo "ERROR: Downloaded avbroot archive did not contain an avbroot executable."
+    find "${extract_dir}" -maxdepth 3 -type f | sed 's#^#    #g' || true
+    rm -rf "${tmpdir}"
+    return 1
+  fi
+
+  install_dir="$(dirname "${AVBROOT_INSTALL_PATH}")"
+  mkdir -p "${install_dir}"
+  install -m 0755 "${found_avbroot}" "${AVBROOT_INSTALL_PATH}"
+  rm -rf "${tmpdir}"
+  hash -r
+
+  AVBROOT="${AVBROOT_INSTALL_PATH}"
+  "${AVBROOT}" --version
 }
 
 log "GrapheneOS build setup"
@@ -100,6 +224,9 @@ if [ "${ROOT}" = "magisk" ]; then
   echo "    Magisk APK: ${MAGISK_APK}"
   echo "    Magisk pre-init device: ${MAGISK_PREINIT_DEVICE}"
   echo "    avbroot: ${AVBROOT}"
+  echo "    avbroot auto install: ${AVBROOT_AUTO_INSTALL}"
+  echo "    avbroot version: ${AVBROOT_VERSION}"
+  echo "    avbroot install path: ${AVBROOT_INSTALL_PATH}"
 fi
 echo "    Keys source: ${KEYS_SOURCE:-auto-detect}"
 
@@ -247,8 +374,19 @@ if [ "${ROOT}" = "magisk" ]; then
   if ! AVBROOT_RESOLVED="$(command -v "${AVBROOT}" 2>/dev/null)"; then
     if [ -x "${AVBROOT}" ]; then
       AVBROOT_RESOLVED="${AVBROOT}"
+    elif [ "${AVBROOT_AUTO_INSTALL}" = "1" ]; then
+      install_avbroot
+      if ! AVBROOT_RESOLVED="$(command -v "${AVBROOT}" 2>/dev/null)"; then
+        if [ -x "${AVBROOT}" ]; then
+          AVBROOT_RESOLVED="${AVBROOT}"
+        else
+          echo "ERROR: avbroot auto-install finished, but avbroot is still not executable."
+          exit 1
+        fi
+      fi
     else
       echo "ERROR: avbroot was not found. Install it, or run with AVBROOT=/absolute/path/to/avbroot"
+      echo "       To allow the script to install it automatically, run with AVBROOT_AUTO_INSTALL=1."
       exit 1
     fi
   fi
@@ -360,6 +498,9 @@ sudo -H -u "${BUILD_USER}" env \
   MAGISK_APK_WORKDIR="${MAGISK_APK_WORKDIR:-}" \
   MAGISK_PREINIT_DEVICE="${MAGISK_PREINIT_DEVICE}" \
   AVBROOT="${AVBROOT}" \
+  AVBROOT_AUTO_INSTALL="${AVBROOT_AUTO_INSTALL}" \
+  AVBROOT_VERSION="${AVBROOT_VERSION}" \
+  AVBROOT_INSTALL_PATH="${AVBROOT_INSTALL_PATH}" \
   AVBROOT_AVB_KEY="${AVBROOT_AVB_KEY:-}" \
   AVBROOT_OTA_KEY="${AVBROOT_OTA_KEY:-}" \
   AVBROOT_OTA_CERT="${AVBROOT_OTA_CERT:-}" \
