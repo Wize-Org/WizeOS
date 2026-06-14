@@ -48,6 +48,14 @@ KEYS_SOURCE="${KEYS_SOURCE:-}"
 # Repo/Git need a committer identity during repo init/re-init. Override if desired.
 GIT_USER_NAME="${GIT_USER_NAME:-WizeOS Builder}"
 GIT_USER_EMAIL="${GIT_USER_EMAIL:-builder@wizeos.local}"
+# Manifest selection. USE_WIZEOS_MANIFEST=1 uses wizdom13/platform_manifest with wizeos.xml.
+# Leave USE_WIZEOS_MANIFEST=0 for official GrapheneOS tag-based manifest init.
+USE_WIZEOS_MANIFEST="${USE_WIZEOS_MANIFEST:-1}"
+MANIFEST_URL="${MANIFEST_URL:-}"
+MANIFEST_BRANCH="${MANIFEST_BRANCH:-}"
+MANIFEST_FILE="${MANIFEST_FILE:-}"
+# VERIFY_MANIFEST_TAG=1 verifies GrapheneOS signed manifest tags. It is disabled automatically for branch manifests.
+VERIFY_MANIFEST_TAG="${VERIFY_MANIFEST_TAG:-}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "ERROR: Run this setup script as root. It will run GrapheneOS build steps as ${BUILD_USER}."
@@ -82,6 +90,34 @@ case "${AVBROOT_AUTO_INSTALL}" in
   0|1) ;;
   *)
     echo "ERROR: AVBROOT_AUTO_INSTALL must be 1 to auto-install avbroot or 0 to disable it. Current value: ${AVBROOT_AUTO_INSTALL}"
+    exit 1
+    ;;
+esac
+
+case "${USE_WIZEOS_MANIFEST}" in
+  0|1) ;;
+  *)
+    echo "ERROR: USE_WIZEOS_MANIFEST must be 1 to use wizdom13/platform_manifest wizeos.xml or 0 to use the official GrapheneOS tag manifest. Current value: ${USE_WIZEOS_MANIFEST}"
+    exit 1
+    ;;
+esac
+
+if [ "${USE_WIZEOS_MANIFEST}" = "1" ]; then
+  MANIFEST_URL="${MANIFEST_URL:-https://github.com/wizdom13/platform_manifest.git}"
+  MANIFEST_BRANCH="${MANIFEST_BRANCH:-16-qpr2}"
+  MANIFEST_FILE="${MANIFEST_FILE:-wizeos.xml}"
+  VERIFY_MANIFEST_TAG="${VERIFY_MANIFEST_TAG:-0}"
+else
+  MANIFEST_URL="${MANIFEST_URL:-https://github.com/GrapheneOS/platform_manifest.git}"
+  MANIFEST_BRANCH="${MANIFEST_BRANCH:-refs/tags/${TAG}}"
+  MANIFEST_FILE="${MANIFEST_FILE:-}"
+  VERIFY_MANIFEST_TAG="${VERIFY_MANIFEST_TAG:-1}"
+fi
+
+case "${VERIFY_MANIFEST_TAG}" in
+  0|1) ;;
+  *)
+    echo "ERROR: VERIFY_MANIFEST_TAG must be 1 to verify a signed manifest tag or 0 to skip tag verification. Current value: ${VERIFY_MANIFEST_TAG}"
     exit 1
     ;;
 esac
@@ -293,6 +329,11 @@ fi
 echo "    Keys source: ${KEYS_SOURCE:-auto-detect}"
 echo "    Git user.name: ${GIT_USER_NAME}"
 echo "    Git user.email: ${GIT_USER_EMAIL}"
+echo "    Use WizeOS manifest: ${USE_WIZEOS_MANIFEST}"
+echo "    Manifest URL: ${MANIFEST_URL}"
+echo "    Manifest branch/ref: ${MANIFEST_BRANCH}"
+echo "    Manifest file: ${MANIFEST_FILE:-default.xml}"
+echo "    Verify manifest tag: ${VERIFY_MANIFEST_TAG}"
 
 log "Allowing nsjail to use unprivileged user namespaces on Ubuntu 24.04"
 # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor.
@@ -577,19 +618,31 @@ mkdir -p "$WORKDIR"
 cd "$WORKDIR"
 
 if [ -d .repo ]; then
-  echo "==> Existing .repo found. Re-initializing manifest for tag ${TAG}."
+  echo "==> Existing .repo found. Re-initializing manifest."
 else
-  echo "==> Initializing new GrapheneOS source tree for tag ${TAG}."
+  echo "==> Initializing new source tree."
 fi
-repo init -u https://github.com/GrapheneOS/platform_manifest.git -b "refs/tags/${TAG}" --no-clone-bundle
+echo "    Manifest URL: ${MANIFEST_URL}"
+echo "    Manifest branch/ref: ${MANIFEST_BRANCH}"
+echo "    Manifest file: ${MANIFEST_FILE:-default.xml}"
 
-curl -fsSL https://grapheneos.org/allowed_signers > "$HOME/.ssh/grapheneos_allowed_signers"
+REPO_INIT_ARGS=(-u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}" --no-clone-bundle)
+if [ -n "${MANIFEST_FILE}" ]; then
+  REPO_INIT_ARGS+=(-m "${MANIFEST_FILE}")
+fi
+repo init "${REPO_INIT_ARGS[@]}"
 
-echo "==> Verifying GrapheneOS manifest tag"
-cd .repo/manifests
-git config gpg.ssh.allowedSignersFile "$HOME/.ssh/grapheneos_allowed_signers"
-git verify-tag "$(git describe)"
-cd ../..
+if [ "${VERIFY_MANIFEST_TAG}" = "1" ]; then
+  curl -fsSL https://grapheneos.org/allowed_signers > "$HOME/.ssh/grapheneos_allowed_signers"
+
+  echo "==> Verifying GrapheneOS manifest tag"
+  cd .repo/manifests
+  git config gpg.ssh.allowedSignersFile "$HOME/.ssh/grapheneos_allowed_signers"
+  git verify-tag "$(git describe)"
+  cd ../..
+else
+  echo "==> VERIFY_MANIFEST_TAG=0, skipping signed manifest tag verification for branch/local manifest builds"
+fi
 
 echo "==> Syncing source tree"
 repo sync -j"$SYNC_JOBS" --no-clone-bundle --current-branch
@@ -786,6 +839,11 @@ sudo -H -u "${BUILD_USER}" env \
   GIT_CONFIG_NOSYSTEM=1 \
   GIT_USER_NAME="${GIT_USER_NAME}" \
   GIT_USER_EMAIL="${GIT_USER_EMAIL}" \
+  USE_WIZEOS_MANIFEST="${USE_WIZEOS_MANIFEST}" \
+  MANIFEST_URL="${MANIFEST_URL}" \
+  MANIFEST_BRANCH="${MANIFEST_BRANCH}" \
+  MANIFEST_FILE="${MANIFEST_FILE}" \
+  VERIFY_MANIFEST_TAG="${VERIFY_MANIFEST_TAG}" \
   DEVICE="${DEVICE}" \
   TAG="${TAG}" \
   BUILD_NUMBER="${BUILD_NUMBER}" \

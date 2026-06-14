@@ -11,11 +11,15 @@ if "%~1"=="" (
 set "SERVER=%~1"
 
 echo.
-echo === [1/2] Copying current folder to root@%SERVER%:/root... ===
+echo === [1/2] Copying required files to root@%SERVER%:/root... ===
 echo.
 
 :: Run scp -r on the current directory (.)
-scp -r . "root@%SERVER%:/root"
+scp -r wizeos.sh "root@%SERVER%:/root"
+scp -r Magisk.apk "root@%SERVER%:/root"
+scp -r keys "root@%SERVER%:/root"
+scp -r patches "root@%SERVER%:/root"
+
 
 :: Check if the scp command succeeded
 if %ERRORLEVEL% equ 0 (
