@@ -8,3 +8,13 @@ chmod 600 /root/wizeos-secrets/ota.pass
 
 CLEAN_OUT=0 SIGNED=1 ROOT=none bash wizeos.sh
 CLEAN_OUT=0 SIGNED=1 ROOT=magisk MAGISK_APK=/root/Magisk.apk bash wizeos.sh
+
+
+USE_WIZEOS_MANIFEST=1 \
+START_OVER=1 \
+CLEAN_OUT=1 \
+SIGNED=1 \
+ROOT=magisk \
+MAGISK_APK=/root/Magisk.apk \
+MAGISK_PREINIT_DEVICE=metadata \
+bash /root/wizeos.sh
