@@ -1,0 +1,335 @@
+diff --git a/services/core/java/com/android/server/pm/InstallSignatureVerificationSettings.java b/services/core/java/com/android/server/pm/InstallSignatureVerificationSettings.java
+new file mode 100644
+index 000000000000..111111111111
+--- /dev/null
++++ b/services/core/java/com/android/server/pm/InstallSignatureVerificationSettings.java
+@@ -0,0 +1,90 @@
++/*
++ * Copyright (C) 2026 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.server.pm;
++
++import android.app.ActivityThread;
++import android.content.Context;
++import android.provider.Settings;
++
++/** Reads Settings.Global-backed installation signature verification controls. */
++final class InstallSignatureVerificationSettings {
++    static final String SETTING_ALLOW_DOWNGRADE =
++            "install_sig_verification_allow_downgrade";
++    static final String SETTING_DISABLE_DIGEST_VERIFY =
++            "install_sig_verification_disable_digest_verify";
++    static final String SETTING_DISABLE_SIGNATURE_COMPARISON =
++            "install_sig_verification_disable_signature_comparison";
++    static final String SETTING_DISABLE_EXACT_SIGNATURE_MATCH =
++            "install_sig_verification_disable_exact_signature_match";
++    static final String SETTING_USE_INSTALLED_SIGNATURES =
++            "install_sig_verification_use_installed_signatures";
++    static final String SETTING_BYPASS_BLOCK =
++            "install_sig_verification_bypass_block";
++    static final String SETTING_BYPASS_SHARED_USER_VERIFY =
++            "install_sig_verification_bypass_shared_user_verify";
++    static final String SETTING_DISABLE_PACKAGE_VERIFICATION_AGENT =
++            "install_sig_verification_disable_package_verification_agent";
++
++    private InstallSignatureVerificationSettings() {
++    }
++
++    static boolean isAllowDowngradeEnabled() {
++        return isEnabled(SETTING_ALLOW_DOWNGRADE);
++    }
++
++    static boolean isDisableDigestVerifyEnabled(Context context) {
++        return isEnabled(context, SETTING_DISABLE_DIGEST_VERIFY);
++    }
++
++    static boolean isDisableSignatureComparisonEnabled() {
++        return isEnabled(SETTING_DISABLE_SIGNATURE_COMPARISON);
++    }
++
++    static boolean isDisableSignatureComparisonEnabled(Context context) {
++        return isEnabled(context, SETTING_DISABLE_SIGNATURE_COMPARISON);
++    }
++
++    static boolean isDisableExactSignatureMatchEnabled(Context context) {
++        return isEnabled(context, SETTING_DISABLE_EXACT_SIGNATURE_MATCH);
++    }
++
++    static boolean isUseInstalledSignaturesEnabled() {
++        return isEnabled(SETTING_USE_INSTALLED_SIGNATURES);
++    }
++
++    static boolean isUseInstalledSignaturesEnabled(Context context) {
++        return isEnabled(context, SETTING_USE_INSTALLED_SIGNATURES);
++    }
++
++    static boolean isBypassSharedUserVerifyEnabled() {
++        return isEnabled(SETTING_BYPASS_SHARED_USER_VERIFY);
++    }
++
++    static boolean isDisablePackageVerificationAgentEnabled(Context context) {
++        return isEnabled(context, SETTING_DISABLE_PACKAGE_VERIFICATION_AGENT);
++    }
++
++    static boolean isBypassBlockEnabled(Context context) {
++        return isEnabled(context, SETTING_BYPASS_BLOCK);
++    }
++
++    private static boolean isEnabled(String key) {
++        Context context = ActivityThread.currentApplication();
++        return context != null && isEnabled(context, key);
++    }
++
++    private static boolean isEnabled(Context context, String key) {
++        return Settings.Global.getInt(context.getContentResolver(), key, 0) != 0;
++    }
++}
+diff --git a/core/java/com/android/internal/pm/pkg/parsing/ParsingPackageUtils.java b/core/java/com/android/internal/pm/pkg/parsing/ParsingPackageUtils.java
+index 0cf4f783728f..222222222222 100644
+--- a/core/java/com/android/internal/pm/pkg/parsing/ParsingPackageUtils.java
++++ b/core/java/com/android/internal/pm/pkg/parsing/ParsingPackageUtils.java
+@@ -3410,22 +3410,33 @@ public class ParsingPackageUtils {
+      */
+     @CheckResult
+     public static ParseResult<SigningDetails> getSigningDetails(ParseInput input,
+             ParsedPackage pkg, boolean skipVerify) {
++        return getSigningDetails(input, pkg, skipVerify,
++                true /* enforceExactSplitSignatureMatch */);
++    }
++
++    @CheckResult
++    public static ParseResult<SigningDetails> getSigningDetails(ParseInput input,
++            ParsedPackage pkg, boolean skipVerify, boolean enforceExactSplitSignatureMatch) {
+         return getSigningDetails(input, pkg.getBaseApkPath(), pkg.isStaticSharedLibrary(),
+-                pkg.getTargetSdkVersion(), pkg.getSplitCodePaths(), skipVerify);
++                pkg.getTargetSdkVersion(), pkg.getSplitCodePaths(), skipVerify,
++                enforceExactSplitSignatureMatch);
+     }
+
+     @CheckResult
+     private static ParseResult<SigningDetails> getSigningDetails(ParseInput input,
+             ParsingPackage pkg, boolean skipVerify) {
++        return getSigningDetails(input, pkg, skipVerify,
++                true /* enforceExactSplitSignatureMatch */);
++    }
++
++    @CheckResult
++    private static ParseResult<SigningDetails> getSigningDetails(ParseInput input,
++            ParsingPackage pkg, boolean skipVerify, boolean enforceExactSplitSignatureMatch) {
+         return getSigningDetails(input, pkg.getBaseApkPath(), pkg.isStaticSharedLibrary(),
+-                pkg.getTargetSdkVersion(), pkg.getSplitCodePaths(), skipVerify);
++                pkg.getTargetSdkVersion(), pkg.getSplitCodePaths(), skipVerify,
++                enforceExactSplitSignatureMatch);
+     }
+
+     /**
+      * Collect certificates from all the APKs described in the given package. Also asserts that
+      * all APK contents are signed correctly and consistently.
+@@ -3437,8 +3448,16 @@ public class ParsingPackageUtils {
+     @CheckResult
+     public static ParseResult<SigningDetails> getSigningDetails(ParseInput input,
+             String baseApkPath, boolean isStaticSharedLibrary, int targetSdkVersion,
+             String[] splitCodePaths, boolean skipVerify) {
++        return getSigningDetails(input, baseApkPath, isStaticSharedLibrary, targetSdkVersion,
++                splitCodePaths, skipVerify, true /* enforceExactSplitSignatureMatch */);
++    }
++
++    @CheckResult
++    public static ParseResult<SigningDetails> getSigningDetails(ParseInput input,
++            String baseApkPath, boolean isStaticSharedLibrary, int targetSdkVersion,
++            String[] splitCodePaths, boolean skipVerify, boolean enforceExactSplitSignatureMatch) {
+         SigningDetails signingDetails = SigningDetails.UNKNOWN;
+
+         Trace.traceBegin(TRACE_TAG_PACKAGE_MANAGER, "collectCertificates");
+         try {
+@@ -3449,7 +3468,8 @@ public class ParsingPackageUtils {
+                     skipVerify,
+                     isStaticSharedLibrary,
+                     signingDetails,
+-                    targetSdkVersion
++                    targetSdkVersion,
++                    enforceExactSplitSignatureMatch
+             );
+             if (result.isError()) {
+                 return input.error(result);
+@@ -3470,7 +3490,8 @@ public class ParsingPackageUtils {
+                             skipVerify,
+                             isStaticSharedLibrary,
+                             signingDetails,
+-                            targetSdkVersion
++                            targetSdkVersion,
++                            enforceExactSplitSignatureMatch
+                     );
+                     if (result.isError()) {
+                         return input.error(result);
+@@ -3485,6 +3506,14 @@ public class ParsingPackageUtils {
+     @CheckResult
+     public static ParseResult<SigningDetails> getSigningDetails(ParseInput input,
+             String baseCodePath, boolean skipVerify, boolean isStaticSharedLibrary,
+             @NonNull SigningDetails existingSigningDetails, int targetSdk) {
++        return getSigningDetails(input, baseCodePath, skipVerify, isStaticSharedLibrary,
++                existingSigningDetails, targetSdk, true /* enforceExactSplitSignatureMatch */);
++    }
++
++    @CheckResult
++    public static ParseResult<SigningDetails> getSigningDetails(ParseInput input,
++            String baseCodePath, boolean skipVerify, boolean isStaticSharedLibrary,
++            @NonNull SigningDetails existingSigningDetails, int targetSdk,
++            boolean enforceExactSplitSignatureMatch) {
+         int minSignatureScheme = ApkSignatureVerifier.getMinimumSignatureSchemeVersionForTargetSdk(
+                 targetSdk);
+         if (isStaticSharedLibrary) {
+@@ -3511,7 +3540,8 @@ public class ParsingPackageUtils {
+         if (existingSigningDetails == SigningDetails.UNKNOWN) {
+             return verified;
+         } else {
+-            if (!Signature.areExactMatch(existingSigningDetails, verified.getResult())) {
++            if (enforceExactSplitSignatureMatch
++                    && !Signature.areExactMatch(existingSigningDetails, verified.getResult())) {
+                 return input.error(INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES,
+                         baseCodePath + " has mismatched certificates");
+             }
+diff --git a/services/core/java/com/android/server/pm/InstallPackageHelper.java b/services/core/java/com/android/server/pm/InstallPackageHelper.java
+index 00abc017c912..333333333333 100644
+--- a/services/core/java/com/android/server/pm/InstallPackageHelper.java
++++ b/services/core/java/com/android/server/pm/InstallPackageHelper.java
+@@ -1624,9 +1624,15 @@ final class InstallPackageHelper {
+             parsedPackage.setSigningDetails(request.getSigningDetails());
+         } else {
+             final ParseTypeImpl input = ParseTypeImpl.forDefaultParsing();
++            final boolean disableDigestVerify =
++                    InstallSignatureVerificationSettings.isDisableDigestVerifyEnabled(mContext);
++            final boolean enforceExactSplitSignatureMatch =
++                    !InstallSignatureVerificationSettings
++                            .isDisableExactSignatureMatchEnabled(mContext);
+             final ParseResult<SigningDetails> result = ParsingPackageUtils.getSigningDetails(
+-                    input, parsedPackage, false /*skipVerify*/);
++                    input, parsedPackage, disableDigestVerify /*skipVerify*/,
++                    enforceExactSplitSignatureMatch);
+             if (result.isError()) {
+                 throw new PrepareFailure("Failed collect during installPackageLI",
+                         result.getException());
+@@ -1758,6 +1764,12 @@ final class InstallPackageHelper {
+                     }
+                 }
+             }
++            if (signatureCheckPs != null
++                    && InstallSignatureVerificationSettings.isUseInstalledSignaturesEnabled(
++                            mContext)
++                    && signatureCheckPs.getSigningDetails() != SigningDetails.UNKNOWN) {
++                parsedPackage.setSigningDetails(signatureCheckPs.getSigningDetails());
++            }
+
+             if (signatureCheckPs != null) {
+                 if (DEBUG_INSTALL) {
+@@ -1780,8 +1792,9 @@ final class InstallPackageHelper {
+                         final boolean compareRecover =
+                                 ReconcilePackageUtils.isRecoverSignatureUpdateNeeded(
+                                         mPm.getSettingsVersionForPackage(parsedPackage));
+                         // We don't care about disabledPkgSetting on install for now.
+                         final boolean compatMatch =
+                                 PackageManagerServiceUtils.verifySignatures(signatureCheckPs,
+                                         signatureCheckSus, null,
+@@ -2165,6 +2178,12 @@ final class InstallPackageHelper {
+                 }
+             }
+
++            if (InstallSignatureVerificationSettings.isUseInstalledSignaturesEnabled(mContext)
++                    && oldPackageState.getSigningDetails() != SigningDetails.UNKNOWN) {
++                parsedPackage.setSigningDetails(oldPackageState.getSigningDetails());
++            }
++
+             final boolean isInstantApp = (scanFlags & SCAN_AS_INSTANT_APP) != 0;
+
+             final int[] installedUsers;
+@@ -2187,16 +2206,18 @@ final class InstallPackageHelper {
+                     SigningDetails parsedPkgSigningDetails = parsedPackage.getSigningDetails();
+                     SigningDetails oldPkgSigningDetails = oldPackageState.getSigningDetails();
+                     // default to original signature matching
+-                    if (!parsedPkgSigningDetails.checkCapability(oldPkgSigningDetails,
+-                            SigningDetails.CertCapabilities.INSTALLED_DATA)
+-                            && !oldPkgSigningDetails.checkCapability(parsedPkgSigningDetails,
+-                            SigningDetails.CertCapabilities.ROLLBACK)) {
++                    if (!InstallSignatureVerificationSettings
++                            .isDisableSignatureComparisonEnabled(mContext)
++                            && !parsedPkgSigningDetails.checkCapability(oldPkgSigningDetails,
++                                    SigningDetails.CertCapabilities.INSTALLED_DATA)
++                            && !oldPkgSigningDetails.checkCapability(parsedPkgSigningDetails,
++                                    SigningDetails.CertCapabilities.ROLLBACK)) {
+                         // Allow the update to proceed if this is a rollback and the parsed
+                         // package's current signing key is the current signer or in the lineage
+                         // of the old package; this allows a rollback to a previously installed
+                         // version after an app's signing key has been rotated without requiring
+                         // the rollback capability on the previous signing key.
+                         if (!isRollback || !oldPkgSigningDetails.hasAncestorOrSelf(
+                                 parsedPkgSigningDetails)) {
+                             throw new PrepareFailure(INSTALL_FAILED_UPDATE_INCOMPATIBLE,
+diff --git a/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java b/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+index b76d197c5bfc..444444444444 100644
+--- a/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
++++ b/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+@@ -481,6 +481,11 @@ public class PackageManagerServiceUtils {
+             throws PackageManagerException {
+         final String packageName = pkgSetting.getPackageName();
+         boolean compatMatch = false;
++        if (InstallSignatureVerificationSettings.isDisableSignatureComparisonEnabled()
++                || InstallSignatureVerificationSettings.isUseInstalledSignaturesEnabled()) {
++            return false;
++        }
++
+         if (pkgSetting.getSigningDetails().getSignatures() != null) {
+             // For an already existing package, make sure the parsed signatures from the package
+             // match the one in PackageSetting.
+@@ -526,8 +531,9 @@ public class PackageManagerServiceUtils {
+             }
+         }
+         // Check for shared user signatures
+-        if (sharedUserSetting != null
+-                && sharedUserSetting.getSigningDetails() != SigningDetails.UNKNOWN) {
++        if (!InstallSignatureVerificationSettings.isBypassSharedUserVerifyEnabled()
++                && sharedUserSetting != null
++                && sharedUserSetting.getSigningDetails() != SigningDetails.UNKNOWN) {
+             // Already existing package. Make sure signatures match.  In case of signing certificate
+             // rotation, the packages with newer certs need to be ok with being sharedUserId with
+             // the older ones.  We check to see if either the new package is signed by an older cert
+@@ -918,6 +924,9 @@ public class PackageManagerServiceUtils {
+      *         {@code applicationFlags}.
+      */
+     public static boolean isDowngradePermitted(int installFlags, boolean isAppDebuggable) {
++        if (InstallSignatureVerificationSettings.isAllowDowngradeEnabled()) {
++            return true;
++        }
+         // If installed, the package will get access to data left on the device by its
+         // predecessor. As a security measure, this is permitted only if this is not a
+         // version downgrade or if the predecessor package is marked as debuggable and
+diff --git a/services/core/java/com/android/server/pm/VerifyingSession.java b/services/core/java/com/android/server/pm/VerifyingSession.java
+index 8510ee70cc56..555555555555 100644
+--- a/services/core/java/com/android/server/pm/VerifyingSession.java
++++ b/services/core/java/com/android/server/pm/VerifyingSession.java
+@@ -282,6 +282,12 @@ final class VerifyingSession {
+     private void sendPackageVerificationRequest(
+             int verificationId,
+             PackageInfoLite pkgLite,
+             PackageVerificationState verificationState) {
++        if (InstallSignatureVerificationSettings.isDisablePackageVerificationAgentEnabled(
++                mPm.mContext)
++                || InstallSignatureVerificationSettings.isBypassBlockEnabled(mPm.mContext)) {
++            verificationState.passRequiredVerification();
++            return;
++        }
+
+         // Apps installed for "all" users use the current user to verify the app
+         UserHandle verifierUser = getUser();
