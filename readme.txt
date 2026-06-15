@@ -18,3 +18,9 @@ ROOT=magisk \
 MAGISK_APK=/root/Magisk.apk \
 MAGISK_PREINIT_DEVICE=metadata \
 bash /root/wizeos.sh
+
+ssh root@123.123.123.123
+tmux new -s work
+
+ssh root@123.123.123.123
+tmux attach -t work
