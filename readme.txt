@@ -25,3 +25,5 @@ tmux new -s work
 
 ssh root@123.123.123.123
 tmux attach -t work
+
+db sideload mustang-ota_update-2026060600-magisk.zip
