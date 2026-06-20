@@ -752,13 +752,13 @@ echo "==> Generating Pixel vendor files for ${DEVICE}"
 # GrapheneOS adevtool is provided by the source tree after vendor/adevtool deps are installed.
 # Do not rely on it being globally available as an `adevtool` command.
 export PATH="$PWD/vendor/adevtool/bin:$PWD/vendor/adevtool/node_modules/.bin:$PATH"
-if command -v adevtool >/dev/null 2>&1; then
-  adevtool generate-all -d "$DEVICE"
-elif [ -x "vendor/adevtool/bin/run" ]; then
-  vendor/adevtool/bin/run generate-all -d "$DEVICE"
+if [ -f "vendor/adevtool/bin/run" ]; then
+  node vendor/adevtool/bin/run generate-all --devices "$DEVICE"
+elif command -v adevtool >/dev/null 2>&1; then
+  adevtool generate-all --devices "$DEVICE"
 else
   echo "ERROR: adevtool was not found after Yarn install."
-  echo "Checked: command adevtool and vendor/adevtool/bin/run"
+  echo "Checked: vendor/adevtool/bin/run and command adevtool"
   exit 1
 fi
 
