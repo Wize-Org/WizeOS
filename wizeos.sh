@@ -5,6 +5,8 @@
 
 set -eo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 DEVICE="${DEVICE:-mustang}"
 TAG="${TAG:-2026061800}"
 # GrapheneOS finalize.sh expects BUILD_NUMBER in the environment.
@@ -44,7 +46,12 @@ AVBROOT_PASS_OTA_FILE="${AVBROOT_PASS_OTA_FILE:-}"
 # If you set START_OVER=1, the script will back up keys before deleting the tree.
 START_OVER="${START_OVER:-0}"
 # Optional: set KEYS_SOURCE=/path/to/keys if your keys folder is not already in the source tree.
-KEYS_SOURCE="${KEYS_SOURCE:-}"
+KEYS_SOURCE="${KEYS_SOURCE:-${SCRIPT_DIR}/wizeos-keys-decrypted}"
+DECRYPT_KEYS="${DECRYPT_KEYS:-0}"
+DECRYPT_KEYS_SCRIPT="${DECRYPT_KEYS_SCRIPT:-${SCRIPT_DIR}/decrypt-keys.sh}"
+DECRYPTED_KEYS_DIR="${DECRYPTED_KEYS_DIR:-${SCRIPT_DIR}/wizeos-keys-decrypted}"
+KEYS_REPO_SOURCE="${KEYS_REPO_SOURCE:-${SCRIPT_DIR}/keys}"
+SIGNING_KEY_PASSPHRASE_FILE="${SIGNING_KEY_PASSPHRASE_FILE:-/home/${BUILD_USER}/wizeos-secrets/signing-empty.pass}"
 # Repo/Git need a committer identity during repo init/re-init. Override if desired.
 GIT_USER_NAME="${GIT_USER_NAME:-WizeOS Builder}"
 GIT_USER_EMAIL="${GIT_USER_EMAIL:-builder@wizeos.local}"
@@ -432,6 +439,49 @@ if [ -d "/root/android/grapheneos-${TAG}" ] && [ ! -d "${WORKDIR}" ]; then
   chown -R "${BUILD_USER}:${BUILD_USER}" "${WORKDIR}"
 fi
 
+# Optionally decrypt uploaded /root/keys into /root/wizeos-keys-decrypted before copying keys into the GrapheneOS workdir.
+if [ "${SIGNED}" = "1" ]; then
+  case "${DECRYPT_KEYS}" in
+    0|1) ;;
+    *)
+      echo "ERROR: DECRYPT_KEYS must be 0 or 1. Current value: ${DECRYPT_KEYS}"
+      exit 1
+      ;;
+  esac
+
+  if [ "${DECRYPT_KEYS}" = "1" ]; then
+    if [ ! -x "${DECRYPT_KEYS_SCRIPT}" ]; then
+      echo "ERROR: DECRYPT_KEYS=1 but script is not executable: ${DECRYPT_KEYS_SCRIPT}"
+      echo "       Run: chmod 0700 ${DECRYPT_KEYS_SCRIPT}"
+      exit 1
+    fi
+
+    log "Decrypting uploaded keys for unattended builds"
+    DEVICE="${DEVICE}" \
+    SOURCE_KEYS_DIR="${KEYS_REPO_SOURCE}" \
+    DEST_KEYS_DIR="${DECRYPTED_KEYS_DIR}" \
+    BUILDER_USER="${BUILD_USER}" \
+    EMPTY_SIGNING_PASS_FILE="${SIGNING_KEY_PASSPHRASE_FILE}" \
+      "${DECRYPT_KEYS_SCRIPT}"
+
+    KEYS_SOURCE="${DECRYPTED_KEYS_DIR}"
+  elif [ -z "${KEYS_SOURCE}" ] && [ -d "${DECRYPTED_KEYS_DIR}/${DEVICE}" ]; then
+    log "Using existing decrypted server-only keys folder"
+    KEYS_SOURCE="${DECRYPTED_KEYS_DIR}"
+  fi
+
+  if [ -n "${SIGNING_KEY_PASSPHRASE_FILE}" ] && [ ! -f "${SIGNING_KEY_PASSPHRASE_FILE}" ]; then
+    log "Creating blank signing passphrase file for unattended generate-release.sh"
+    install -d -m 0700 "/home/${BUILD_USER}/wizeos-secrets"
+    : > "${SIGNING_KEY_PASSPHRASE_FILE}"
+    for _ in $(seq 1 200); do
+      printf '\n' >> "${SIGNING_KEY_PASSPHRASE_FILE}"
+    done
+    chown "${BUILD_USER}:${BUILD_USER}" "${SIGNING_KEY_PASSPHRASE_FILE}" 2>/dev/null || true
+    chmod 0600 "${SIGNING_KEY_PASSPHRASE_FILE}"
+  fi
+fi
+
 # Auto-detect an existing keys folder and place it in the source tree.
 # GrapheneOS generate-release.sh expects keys under the source tree, normally keys/${DEVICE}/.
 log "Preparing existing keys folder"
@@ -590,6 +640,8 @@ fi
 BUILDER_RUNNER="/home/${BUILD_USER}/run-wizeos-builder-${TAG}.sh"
 cat >"${BUILDER_RUNNER}" <<'BUILDER_SCRIPT'
 set -eo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH=$PATH:/sbin:/usr/sbin:/usr/local/sbin
 export HOME="${HOME:-/home/builder}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -759,7 +811,11 @@ if [ "${SIGNED}" = "1" ]; then
   mkdir -p "releases/${BUILD_NUMBER}"
   GENERATE_RELEASE_LOG="releases/${BUILD_NUMBER}/generate-release-${DEVICE}-${BUILD_NUMBER}.log"
   echo "==> Logging generate-release output to ${GENERATE_RELEASE_LOG}"
-  ( umask 077; script/generate-release.sh "$DEVICE" "$BUILD_NUMBER" ) 2>&1 | tee "${GENERATE_RELEASE_LOG}"
+  if [ -n "${SIGNING_KEY_PASSPHRASE_FILE:-}" ] && [ -f "${SIGNING_KEY_PASSPHRASE_FILE}" ]; then
+    ( umask 077; script/generate-release.sh "$DEVICE" "$BUILD_NUMBER" ) < "${SIGNING_KEY_PASSPHRASE_FILE}" 2>&1 | tee "${GENERATE_RELEASE_LOG}"
+  else
+    ( umask 077; script/generate-release.sh "$DEVICE" "$BUILD_NUMBER" ) 2>&1 | tee "${GENERATE_RELEASE_LOG}"
+  fi
 
   RELEASE_DIR="releases/${BUILD_NUMBER}/release-${DEVICE}-${BUILD_NUMBER}"
   echo "==> Signed release finished"
@@ -865,6 +921,7 @@ sudo -H -u "${BUILD_USER}" env \
   AVBROOT_OTA_CERT="${AVBROOT_OTA_CERT:-}" \
   AVBROOT_PASS_AVB_FILE="${AVBROOT_PASS_AVB_FILE:-}" \
   AVBROOT_PASS_OTA_FILE="${AVBROOT_PASS_OTA_FILE:-}" \
+  SIGNING_KEY_PASSPHRASE_FILE="${SIGNING_KEY_PASSPHRASE_FILE:-}" \
   bash "${BUILDER_RUNNER}"
 
 if [ "${SIGNED}" = "1" ]; then
