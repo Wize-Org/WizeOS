@@ -6,7 +6,7 @@
 set -eo pipefail
 
 DEVICE="${DEVICE:-mustang}"
-TAG="${TAG:-2026060600}"
+TAG="${TAG:-2026061800}"
 # GrapheneOS finalize.sh expects BUILD_NUMBER in the environment.
 # Default to TAG so release directories and OTA metadata stay aligned with the manifest tag.
 BUILD_NUMBER="${BUILD_NUMBER:-${TAG}}"
