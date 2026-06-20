@@ -14,11 +14,12 @@ echo.
 echo === [1/2] Copying required files to root@%SERVER%:/root... ===
 echo.
 
-:: Copy the build entrypoint and its split builder runner.
-scp -r wizeos*.sh "root@%SERVER%:/root"
+:: Run scp -r on the current directory (.)
+scp -r wizeos.sh "root@%SERVER%:/root"
 scp -r Magisk.apk "root@%SERVER%:/root"
 scp -r keys "root@%SERVER%:/root"
 scp -r patches "root@%SERVER%:/root"
+
 
 :: Check if the scp command succeeded
 if %ERRORLEVEL% equ 0 (
