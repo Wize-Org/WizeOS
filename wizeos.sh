@@ -52,6 +52,8 @@ DECRYPT_KEYS_SCRIPT="${DECRYPT_KEYS_SCRIPT:-${SCRIPT_DIR}/decrypt-keys.sh}"
 DECRYPTED_KEYS_DIR="${DECRYPTED_KEYS_DIR:-${SCRIPT_DIR}/wizeos-keys-decrypted}"
 KEYS_REPO_SOURCE="${KEYS_REPO_SOURCE:-${SCRIPT_DIR}/keys}"
 SIGNING_KEY_PASSPHRASE_FILE="${SIGNING_KEY_PASSPHRASE_FILE:-/home/${BUILD_USER}/wizeos-secrets/signing-empty.pass}"
+# Base URL written into packages/apps/Updater/res/values/config.xml.
+UPDATE_SERVER="${UPDATE_SERVER:-https://www.wizesoft.me/download/mustang/}"
 # Repo/Git need a committer identity during repo init/re-init. Override if desired.
 GIT_USER_NAME="${GIT_USER_NAME:-WizeOS Builder}"
 GIT_USER_EMAIL="${GIT_USER_EMAIL:-builder@wizeos.local}"
@@ -334,6 +336,7 @@ if [ "${ROOT}" = "magisk" ]; then
   echo "    avbroot install path: ${AVBROOT_INSTALL_PATH}"
 fi
 echo "    Keys source: ${KEYS_SOURCE:-auto-detect}"
+echo "    Update server: ${UPDATE_SERVER}"
 echo "    Git user.name: ${GIT_USER_NAME}"
 echo "    Git user.email: ${GIT_USER_EMAIL}"
 echo "    Use WizeOS manifest: ${USE_WIZEOS_MANIFEST}"
@@ -699,6 +702,41 @@ fi
 echo "==> Syncing source tree"
 repo sync -j"$SYNC_JOBS" --no-clone-bundle --current-branch
 
+echo "==> Configuring Updater update_base_url"
+UPDATER_CONFIG="packages/apps/Updater/res/values/config.xml"
+if [ ! -f "${UPDATER_CONFIG}" ]; then
+  echo "ERROR: Missing Updater config: ${UPDATER_CONFIG}"
+  exit 1
+fi
+
+python3 - "${UPDATER_CONFIG}" "${UPDATE_SERVER}" <<'PY'
+from pathlib import Path
+import re
+import sys
+from xml.sax.saxutils import escape
+
+path = Path(sys.argv[1])
+url = escape(sys.argv[2], {'"': '&quot;', "'": '&apos;'})
+
+text = path.read_text()
+pattern = re.compile(r'([ \t]*)<string\s+name="update_base_url">.*?</string>', re.S)
+
+match = pattern.search(text)
+if match:
+    replacement = f'{match.group(1)}<string name="update_base_url">{url}</string>'
+    text = pattern.sub(replacement, text, count=1)
+else:
+    replacement = f'    <string name="update_base_url">{url}</string>\n'
+    if '</resources>' not in text:
+        raise SystemExit(f"{path} does not contain </resources>")
+    text = text.replace('</resources>', replacement + '</resources>', 1)
+
+path.write_text(text)
+PY
+
+grep -n 'update_base_url' "${UPDATER_CONFIG}"
+
+
 echo "==> Loading Android build environment"
 source build/envsetup.sh
 
@@ -903,6 +941,7 @@ sudo -H -u "${BUILD_USER}" env \
   DEVICE="${DEVICE}" \
   TAG="${TAG}" \
   BUILD_NUMBER="${BUILD_NUMBER}" \
+  UPDATE_SERVER="${UPDATE_SERVER}" \
   CLEAN_OUT="${CLEAN_OUT}" \
   JOBS="${JOBS}" \
   BASE_DIR="${BASE_DIR}" \
