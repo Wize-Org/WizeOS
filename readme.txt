@@ -10,14 +10,15 @@ CLEAN_OUT=0 SIGNED=1 ROOT=none bash wizeos.sh
 CLEAN_OUT=0 SIGNED=1 ROOT=magisk MAGISK_APK=/root/Magisk.apk bash wizeos.sh
 
 
-USE_WIZEOS_MANIFEST=1 \
-BUILD_NUMBER=2026060602
+TAG=2026060600 \
+USE_WIZEOS_MANIFEST=0 \
 START_OVER=1 \
 CLEAN_OUT=1 \
 SIGNED=1 \
 ROOT=magisk \
 MAGISK_APK=/root/Magisk.apk \
 MAGISK_PREINIT_DEVICE=metadata \
+DECRYPT_KEYS=1 \
 bash /root/wizeos.sh
 
 dos2unix /root/wizeos.sh
