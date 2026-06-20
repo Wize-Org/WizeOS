@@ -44,7 +44,7 @@ make_temp_pass_file() {
   pass_file="$(mktemp)"
 
   read -rsp "$prompt" pass
-  echo
+  printf '\n' >&2
 
   printf '%s' "$pass" > "$pass_file"
   unset pass
