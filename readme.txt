@@ -30,3 +30,13 @@ ssh root@123.123.123.123
 tmux attach -t work
 
 db sideload mustang-ota_update-2026060600-magisk.zip
+
+Update server:
+mustang-ota_update-2026061800.zip
+mustang-testing
+mustang-beta
+mustang-stable
+mustang-install-2026061800.zip
+mustang-install-2026061800.zip.sig
+mustang-factory-2026061800.zip
+mustang-img-2026061800.zip   # optional, not needed for OTA

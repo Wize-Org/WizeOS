@@ -54,6 +54,8 @@ KEYS_REPO_SOURCE="${KEYS_REPO_SOURCE:-${SCRIPT_DIR}/keys}"
 SIGNING_KEY_PASSPHRASE_FILE="${SIGNING_KEY_PASSPHRASE_FILE:-/home/${BUILD_USER}/wizeos-secrets/signing-empty.pass}"
 # Base URL written into packages/apps/Updater/res/values/config.xml.
 UPDATE_SERVER="${UPDATE_SERVER:-https://www.wizesoft.me/download/mustang/}"
+# OFFICIAL_BUILD=true enables official-build behavior such as including the Updater app.
+OFFICIAL_BUILD="${OFFICIAL_BUILD:-true}"
 # Repo/Git need a committer identity during repo init/re-init. Override if desired.
 GIT_USER_NAME="${GIT_USER_NAME:-WizeOS Builder}"
 GIT_USER_EMAIL="${GIT_USER_EMAIL:-builder@wizeos.local}"
@@ -337,6 +339,7 @@ if [ "${ROOT}" = "magisk" ]; then
 fi
 echo "    Keys source: ${KEYS_SOURCE:-auto-detect}"
 echo "    Update server: ${UPDATE_SERVER}"
+echo "    Official build: ${OFFICIAL_BUILD}"
 echo "    Git user.name: ${GIT_USER_NAME}"
 echo "    Git user.email: ${GIT_USER_EMAIL}"
 echo "    Use WizeOS manifest: ${USE_WIZEOS_MANIFEST}"
@@ -775,7 +778,7 @@ unset BUILD_DATETIME
 # Keep it stable across target-files, finalize, and generate-release.
 export BUILD_NUMBER="${BUILD_NUMBER:-${TAG}}"
 printf 'BUILD_NUMBER=%s\n' "$BUILD_NUMBER"
-unset OFFICIAL_BUILD
+export OFFICIAL_BUILD="${OFFICIAL_BUILD:-true}"
 
 if [ "${SIGNED}" = "1" ]; then
   echo "==> Checking existing keys folder"
@@ -942,6 +945,7 @@ sudo -H -u "${BUILD_USER}" env \
   TAG="${TAG}" \
   BUILD_NUMBER="${BUILD_NUMBER}" \
   UPDATE_SERVER="${UPDATE_SERVER}" \
+  OFFICIAL_BUILD="${OFFICIAL_BUILD}" \
   CLEAN_OUT="${CLEAN_OUT}" \
   JOBS="${JOBS}" \
   BASE_DIR="${BASE_DIR}" \
