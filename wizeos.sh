@@ -56,6 +56,11 @@ SIGNING_KEY_PASSPHRASE_FILE="${SIGNING_KEY_PASSPHRASE_FILE:-/home/${BUILD_USER}/
 UPDATE_SERVER="${UPDATE_SERVER:-https://www.wizesoft.me/download/mustang/}"
 # OFFICIAL_BUILD=true enables official-build behavior such as including the Updater app.
 OFFICIAL_BUILD="${OFFICIAL_BUILD:-true}"
+# LSPOSED_COMPAT=1 enables local LSPosed compatibility patch application.
+# Forked repos should be selected by the WizeOS manifest, not replaced here.
+LSPOSED_COMPAT="${LSPOSED_COMPAT:-0}"
+PATCHES_DIR="${PATCHES_DIR:-${SCRIPT_DIR}/patches}"
+LSPOSED_PATCHES_DIR="${LSPOSED_PATCHES_DIR:-${PATCHES_DIR}/lsposed-compat}"
 # Repo/Git need a committer identity during repo init/re-init. Override if desired.
 GIT_USER_NAME="${GIT_USER_NAME:-WizeOS Builder}"
 GIT_USER_EMAIL="${GIT_USER_EMAIL:-builder@wizeos.local}"
@@ -80,6 +85,21 @@ case "${SIGNED}" in
     exit 1
     ;;
 esac
+
+case "${LSPOSED_COMPAT}" in
+  0|1) ;;
+  *)
+    echo "ERROR: LSPOSED_COMPAT must be 0 or 1. Current value: ${LSPOSED_COMPAT}"
+    exit 1
+    ;;
+esac
+
+if [ "${LSPOSED_COMPAT}" = "1" ] && [ "${USE_WIZEOS_MANIFEST}" != "1" ]; then
+  echo "ERROR: LSPOSED_COMPAT=1 requires USE_WIZEOS_MANIFEST=1."
+  echo "       Forked repos such as frameworks/base are managed by the WizeOS manifest."
+  echo "       Run with USE_WIZEOS_MANIFEST=1 and set MANIFEST_BRANCH to your WizeOS 17 branch if needed."
+  exit 1
+fi
 
 case "${CLEAN_OUT}" in
   0|1) ;;
@@ -340,6 +360,10 @@ fi
 echo "    Keys source: ${KEYS_SOURCE:-auto-detect}"
 echo "    Update server: ${UPDATE_SERVER}"
 echo "    Official build: ${OFFICIAL_BUILD}"
+echo "    LSPosed compatibility: ${LSPOSED_COMPAT}"
+if [ "${LSPOSED_COMPAT}" = "1" ]; then
+  echo "    LSPosed patches dir: ${LSPOSED_PATCHES_DIR}"
+fi
 echo "    Git user.name: ${GIT_USER_NAME}"
 echo "    Git user.email: ${GIT_USER_EMAIL}"
 echo "    Use WizeOS manifest: ${USE_WIZEOS_MANIFEST}"
@@ -705,6 +729,39 @@ fi
 echo "==> Syncing source tree"
 repo sync -j"$SYNC_JOBS" --no-clone-bundle --current-branch
 
+apply_lsposed_patch_dir() {
+  local patch_dir="$1"
+
+  if [ ! -d "${patch_dir}" ]; then
+    echo "==> LSPOSED_COMPAT: no patch directory found at ${patch_dir}, skipping extra patches"
+    return 0
+  fi
+
+  echo "==> LSPOSED_COMPAT: applying patches from ${patch_dir}"
+
+  mapfile -t patches < <(find "${patch_dir}" -type f \( -name '*.patch' -o -name '*.diff' \) | sort)
+
+  if [ "${#patches[@]}" -eq 0 ]; then
+    echo "    No .patch or .diff files found"
+    return 0
+  fi
+
+  for patch_file in "${patches[@]}"; do
+    echo "    Applying ${patch_file}"
+    git apply --check "${patch_file}"
+    git apply "${patch_file}"
+  done
+}
+
+if [ "${LSPOSED_COMPAT}" = "1" ]; then
+  echo "==> LSPOSED_COMPAT=1 enabled"
+  echo "    Using forked repos from the WizeOS manifest."
+  apply_lsposed_patch_dir "${LSPOSED_PATCHES_DIR}"
+else
+  echo "==> LSPOSED_COMPAT=0, using normal manifest source tree"
+fi
+
+
 echo "==> Configuring Updater update_base_url"
 UPDATER_CONFIG="packages/apps/Updater/res/values/config.xml"
 if [ ! -f "${UPDATER_CONFIG}" ]; then
@@ -779,6 +836,11 @@ unset BUILD_DATETIME
 export BUILD_NUMBER="${BUILD_NUMBER:-${TAG}}"
 printf 'BUILD_NUMBER=%s\n' "$BUILD_NUMBER"
 export OFFICIAL_BUILD="${OFFICIAL_BUILD:-true}"
+# LSPOSED_COMPAT=1 enables local LSPosed compatibility patch application.
+# Forked repos should be selected by the WizeOS manifest, not replaced here.
+LSPOSED_COMPAT="${LSPOSED_COMPAT:-0}"
+PATCHES_DIR="${PATCHES_DIR:-${SCRIPT_DIR}/patches}"
+LSPOSED_PATCHES_DIR="${LSPOSED_PATCHES_DIR:-${PATCHES_DIR}/lsposed-compat}"
 
 if [ "${SIGNED}" = "1" ]; then
   echo "==> Checking existing keys folder"
@@ -946,6 +1008,8 @@ sudo -H -u "${BUILD_USER}" env \
   BUILD_NUMBER="${BUILD_NUMBER}" \
   UPDATE_SERVER="${UPDATE_SERVER}" \
   OFFICIAL_BUILD="${OFFICIAL_BUILD}" \
+  LSPOSED_COMPAT="${LSPOSED_COMPAT}" \
+  LSPOSED_PATCHES_DIR="${LSPOSED_PATCHES_DIR}" \
   CLEAN_OUT="${CLEAN_OUT}" \
   JOBS="${JOBS}" \
   BASE_DIR="${BASE_DIR}" \
