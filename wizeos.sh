@@ -444,6 +444,20 @@ chmod 0644 /etc/.repo_gitconfig.json
 mkdir -p "${BASE_DIR}"
 chown -R "${BUILD_USER}:${BUILD_USER}" "/home/${BUILD_USER}"
 
+log "Writing builder Git identity file"
+mkdir -p "/home/${BUILD_USER}"
+cat >"/home/${BUILD_USER}/.gitconfig" <<GITCONFIG_EOF
+[user]
+  name = ${GIT_USER_NAME}
+  email = ${GIT_USER_EMAIL}
+[protocol]
+  version = 2
+[color]
+  ui = false
+GITCONFIG_EOF
+chown "${BUILD_USER}:${BUILD_USER}" "/home/${BUILD_USER}/.gitconfig"
+chmod 0644 "/home/${BUILD_USER}/.gitconfig"
+
 # Preserve existing keys if a user explicitly asks for START_OVER=1.
 KEYS_BACKUP="/home/${BUILD_USER}/keys-backup-${DEVICE}-$(date +%Y%m%d%H%M%S)"
 if [ "${START_OVER}" = "1" ]; then
@@ -690,10 +704,18 @@ node -v
 yarn --version
 
 echo "==> Configuring Git identity for repo"
-git config --global user.name "${GIT_USER_NAME:-WizeOS Builder}"
-git config --global user.email "${GIT_USER_EMAIL:-builder@wizeos.local}"
-# Avoid repo init asking interactively for identity on existing checkouts.
-git config --global color.ui false
+export GIT_AUTHOR_NAME="${GIT_USER_NAME:-WizeOS Builder}"
+export GIT_AUTHOR_EMAIL="${GIT_USER_EMAIL:-builder@wizeos.local}"
+export GIT_COMMITTER_NAME="${GIT_USER_NAME:-WizeOS Builder}"
+export GIT_COMMITTER_EMAIL="${GIT_USER_EMAIL:-builder@wizeos.local}"
+export GIT_CONFIG_GLOBAL="${HOME}/.gitconfig"
+
+if git config --global --get user.name >/dev/null 2>&1 && git config --global --get user.email >/dev/null 2>&1; then
+  echo "    Git identity already configured in ${GIT_CONFIG_GLOBAL}"
+else
+  echo "    WARNING: Git global identity is missing or not readable."
+  echo "    Continuing with environment identity only."
+fi
 
 cd "$BASE_DIR"
 mkdir -p "$WORKDIR"
