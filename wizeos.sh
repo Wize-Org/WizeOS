@@ -405,6 +405,7 @@ apt-get install -y \
   gperf \
   gcc-multilib \
   libc6-dev-i386 \
+  lftp \
   build-essential
 
 log "Removing Ubuntu Node/Yarn packages that conflict with Node.js 24"

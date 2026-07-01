@@ -16,6 +16,9 @@ echo.
 scp -r wizeos.sh "root@%SERVER%:/root/"
 if errorlevel 1 exit /b %ERRORLEVEL%
 
+scp -r upload.sh "root@%SERVER%:/root/"
+if errorlevel 1 exit /b %ERRORLEVEL%
+
 scp -r decrypt-keys.sh "root@%SERVER%:/root/"
 if errorlevel 1 exit /b %ERRORLEVEL%
 
