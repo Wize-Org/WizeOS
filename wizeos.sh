@@ -135,7 +135,7 @@ esac
 
 if [ "${USE_WIZEOS_MANIFEST}" = "1" ]; then
   MANIFEST_URL="${MANIFEST_URL:-https://github.com/wizdom13/platform_manifest.git}"
-  MANIFEST_BRANCH="${MANIFEST_BRANCH:-16-qpr2}"
+  MANIFEST_BRANCH="${MANIFEST_BRANCH:-17}"
   MANIFEST_FILE="${MANIFEST_FILE:-wizeos.xml}"
   VERIFY_MANIFEST_TAG="${VERIFY_MANIFEST_TAG:-0}"
 else
