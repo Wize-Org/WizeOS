@@ -22,6 +22,16 @@ copy_keys_into_workdir() {
   chown -R "${BUILD_USER}:${BUILD_USER}" "${WORKDIR}" "/home/${BUILD_USER}"
 }
 valid_ssh_private_key() { [ -f "$1" ] && ssh-keygen -y -f "$1" >/dev/null 2>&1; }
+same_path() { [ "$(readlink -f "$1" 2>/dev/null || printf '%s' "$1")" = "$(readlink -f "$2" 2>/dev/null || printf '%s' "$2")" ]; }
+install_key_file() {
+  local mode="$1" src="$2" dst="$3"
+  if same_path "${src}" "${dst}"; then
+    chown "${BUILD_USER}:${BUILD_USER}" "${dst}" 2>/dev/null || true
+    chmod "${mode}" "${dst}" 2>/dev/null || true
+  else
+    install -o "${BUILD_USER}" -g "${BUILD_USER}" -m "${mode}" "${src}" "${dst}"
+  fi
+}
 copy_release_ssh_key_to_all_locations() {
   local keys_dir="${WORKDIR}/keys"
   local device_dir="${keys_dir}/${DEVICE}"
@@ -33,12 +43,13 @@ copy_release_ssh_key_to_all_locations() {
 
   mkdir -p "${device_dir}" "${release_keys_dir}" "${release_output_keys_dir}"
 
-  install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0600 "${top_private}" "${device_private}"
-  install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0644 "${top_public}" "${device_public}"
-  install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0600 "${top_private}" "${release_keys_dir}/id_ed25519"
-  install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0644 "${top_public}" "${release_keys_dir}/id_ed25519.pub"
-  install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0600 "${top_private}" "${release_output_keys_dir}/id_ed25519"
-  install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0644 "${top_public}" "${release_output_keys_dir}/id_ed25519.pub"
+  install_key_file 0600 "${top_private}" "${device_private}"
+  install_key_file 0644 "${top_public}" "${device_public}"
+  install_key_file 0600 "${top_private}" "${release_keys_dir}/id_ed25519"
+  install_key_file 0644 "${top_public}" "${release_keys_dir}/id_ed25519.pub"
+  install_key_file 0600 "${top_private}" "${release_output_keys_dir}/id_ed25519"
+  install_key_file 0644 "${top_public}" "${release_output_keys_dir}/id_ed25519.pub"
+  chown -R "${BUILD_USER}:${BUILD_USER}" "${keys_dir}" "${WORKDIR}/releases" 2>/dev/null || true
 }
 ensure_release_ssh_keys() {
   [ "${SIGNED:-0}" = "1" ] || return 0
@@ -53,8 +64,9 @@ ensure_release_ssh_keys() {
   mkdir -p "${device_dir}"
   for candidate in "${top_private}" "${device_private}" "${source_private}"; do if valid_ssh_private_key "${candidate}"; then selected_private="${candidate}"; break; fi; done
   if [ -z "${selected_private}" ]; then log "No valid release SSH key found. Creating a new one."; rm -f "${top_private}" "${top_public}"; ssh-keygen -t ed25519 -N "" -C "wizeos-${DEVICE}-release-metadata" -f "${top_private}"; selected_private="${top_private}"; fi
-  install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0600 "${selected_private}" "${top_private}"
+  install_key_file 0600 "${selected_private}" "${top_private}"
   ssh-keygen -y -f "${top_private}" >"${top_public}"
+  chown "${BUILD_USER}:${BUILD_USER}" "${top_public}" 2>/dev/null || true
   chmod 0644 "${top_public}"
   if [ -n "${KEYS_SOURCE:-}" ]; then
     mkdir -p "${KEYS_SOURCE}/${DEVICE}"
