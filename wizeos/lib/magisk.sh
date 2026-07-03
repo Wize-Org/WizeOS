@@ -16,7 +16,7 @@ prepare_magisk_inputs() {
   [ -f "${AVBROOT_OTA_CERT}" ] || die "Missing OTA cert: ${AVBROOT_OTA_CERT}"
   if [ ! -f "${AVBROOT_OTA_KEY}" ]; then
     RELEASEKEY_PK8="${WORKDIR}/keys/${DEVICE}/releasekey.pk8"; [ -f "${RELEASEKEY_PK8}" ] || die "Missing releasekey.pk8: ${RELEASEKEY_PK8}"
-    openssl pkcs8 -topk8 -scrypt -in "${RELEASEKEY_PK8}" -out "${AVBROOT_OTA_KEY}" -outform PEM
+    openssl pkcs8 -topk8 -nocrypt -inform DER -in "${RELEASEKEY_PK8}" -out "${AVBROOT_OTA_KEY}" -outform PEM
   fi
   chown -R "${BUILD_USER}:${BUILD_USER}" "${MAGISK_DIR}" "${WORKDIR}/keys"; chmod 0600 "${AVBROOT_OTA_KEY}" 2>/dev/null || true
   export AVBROOT_AVB_KEY AVBROOT_OTA_KEY AVBROOT_OTA_CERT AVBROOT_PASS_AVB_FILE AVBROOT_PASS_OTA_FILE MAGISK_APK_WORKDIR
