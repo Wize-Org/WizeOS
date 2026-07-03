@@ -1,7 +1,27 @@
 #!/usr/bin/env bash
+fix_builder_ownership_before_handoff() {
+  mkdir -p "${WORKDIR}"
+
+  # Root-side preparation may create keys, release, Magisk or KSU folders before
+  # the Android build runs as BUILD_USER. Make the builder-owned handoff
+  # explicit so finalize.sh and release packaging can write under releases/.
+  chown "${BUILD_USER}:${BUILD_USER}" "${WORKDIR}" 2>/dev/null || true
+
+  local path
+  for path in \
+    "${WORKDIR}/keys" \
+    "${WORKDIR}/releases" \
+    "${WORKDIR}/magisk" \
+    "${WORKDIR}/ksunext"
+  do
+    [ ! -e "${path}" ] || chown -R "${BUILD_USER}:${BUILD_USER}" "${path}" 2>/dev/null || true
+  done
+}
+
 run_builder_phase() {
   local builder_action="$1"
   local runner="/home/${BUILD_USER}/run-wizeos-builder-${TAG}.sh"
+  fix_builder_ownership_before_handoff
   install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0700 "${SCRIPT_DIR}/scripts/run-as-builder.sh" "${runner}"
   log "Running builder phase: ${builder_action}"
   sudo -H -u "${BUILD_USER}" env \
