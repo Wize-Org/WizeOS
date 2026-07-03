@@ -142,3 +142,13 @@ FTP_PASSWORD='your-password' TAG=2026062800 CHANNEL=stable PUBLISH_ROOT_AS_NORMA
 ```
 
 The old `PUBLISH_MAGISK_AS_NORMAL=1` flag still works and maps to `PUBLISH_ROOT_AS_NORMAL=magisk`.
+
+## Create session
+```text
+tmux new -s work
+```
+
+## Attach session
+```text
+tmux attach -t work
+```
