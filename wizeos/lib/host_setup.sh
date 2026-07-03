@@ -8,7 +8,9 @@ setup_host() {
   fi
   log "Installing base packages"
   apt-get update
-  apt-get install -y ca-certificates curl gnupg sudo repo git openssh-client python3 zip unzip rsync diffutils fontconfig fonts-dejavu-core hostname openssl gperf gcc-multilib libc6-dev-i386 build-essential lftp
+  apt-get install -y ca-certificates curl gnupg sudo repo git openssh-client python3 zip unzip rsync diffutils fontconfig fonts-dejavu-core hostname openssl gperf gcc-multilib libc6-dev-i386 build-essential lftp openjdk-21-jdk-headless
+  command -v java >/dev/null 2>&1 || die "java was not found after installing openjdk-21-jdk-headless"
+  java -version
   log "Installing Node.js 24 and Yarn Classic"
   apt-get remove -y yarnpkg nodejs npm libnode-dev || true
   apt-get autoremove -y || true
