@@ -242,10 +242,65 @@ ensure_builder_release_ssh_keys() {
   echo "==> Release SSH key ready: keys/id_ed25519"
 }
 
+find_release_ota_zip() {
+  local release_dir="$1"
+  find "${release_dir}" -maxdepth 1 -type f \
+    \( -name '*ota*.zip' -o -name '*update*.zip' \) \
+    ! -name '*otatools*.zip' \
+    ! -name '*target_files*.zip' \
+    ! -name '*-magisk.zip' \
+    ! -name '*-ksunext*.zip' \
+    | sort | head -n 1
+}
+
+generate_release_ota_zip() {
+  cd "$WORKDIR"
+  local release_base="releases/${BUILD_NUMBER}"
+  local release_dir="${release_base}/release-${DEVICE}-${BUILD_NUMBER}"
+  local target_files="${release_base}/${DEVICE}-target_files.zip"
+  local otatools_zip="${release_base}/${DEVICE}-otatools.zip"
+  local out_ota="${release_dir}/${DEVICE}-ota_update-${BUILD_NUMBER}.zip"
+  local tmp_dir="/tmp/wizeos-otatools-${DEVICE}-${BUILD_NUMBER}-$$"
+  local ota_tool cert_prefix
+  local key_args=()
+
+  [ -f "${target_files}" ] || { echo "ERROR: Missing target files zip: ${target_files}"; exit 1; }
+  [ -f "${otatools_zip}" ] || { echo "ERROR: Missing otatools zip: ${otatools_zip}"; exit 1; }
+  mkdir -p "${release_dir}"
+
+  echo "==> Generating OTA from target files"
+  echo "    Target files: ${target_files}"
+  echo "    OTA tools   : ${otatools_zip}"
+  echo "    Output OTA  : ${out_ota}"
+
+  rm -rf "${tmp_dir}"
+  mkdir -p "${tmp_dir}"
+  unzip -q "${otatools_zip}" -d "${tmp_dir}"
+  ota_tool="$(find "${tmp_dir}" -type f -name ota_from_target_files | sort | head -n 1)"
+  [ -n "${ota_tool}" ] || { echo "ERROR: ota_from_target_files not found in ${otatools_zip}"; exit 1; }
+
+  cert_prefix="$(unzip -p "${target_files}" META/misc_info.txt 2>/dev/null | sed -n 's/^default_system_dev_certificate=//p' | head -n 1)"
+  if [ -n "${cert_prefix}" ] && [ -f "${cert_prefix}.pk8" ] && [ -f "${cert_prefix}.x509.pem" ]; then
+    key_args=(-k "${cert_prefix}")
+    echo "    OTA key     : ${cert_prefix}"
+  else
+    echo "    OTA key     : default from target files"
+  fi
+
+  "${ota_tool}" "${key_args[@]}" "${target_files}" "${out_ota}"
+  rm -rf "${tmp_dir}"
+  echo "==> Generated OTA: ${out_ota}"
+}
+
 patch_magisk_ota() {
   cd "$WORKDIR"; RELEASE_DIR="releases/${BUILD_NUMBER}/release-${DEVICE}-${BUILD_NUMBER}"
-  OTA_ZIP="$(find "${RELEASE_DIR}" -maxdepth 1 -type f -name '*ota_update*.zip' ! -name '*-magisk.zip' ! -name '*-ksunext*.zip' | sort | head -n 1)"
-  [ -n "${OTA_ZIP}" ] || { echo "ERROR: Could not find OTA zip in ${RELEASE_DIR}"; exit 1; }
+  mkdir -p "${RELEASE_DIR}"
+  OTA_ZIP="$(find_release_ota_zip "${RELEASE_DIR}")"
+  if [ -z "${OTA_ZIP}" ]; then
+    generate_release_ota_zip
+    OTA_ZIP="$(find_release_ota_zip "${RELEASE_DIR}")"
+  fi
+  [ -n "${OTA_ZIP}" ] || { echo "ERROR: Could not find or generate OTA zip in ${RELEASE_DIR}"; exit 1; }
   ROOTED_OTA="${OTA_ZIP%.zip}-magisk.zip"
   AVBROOT_ARGS=(ota patch --input "${OTA_ZIP}" --output "${ROOTED_OTA}" --key-avb "${AVBROOT_AVB_KEY}" --key-ota "${AVBROOT_OTA_KEY}" --cert-ota "${AVBROOT_OTA_CERT}" --magisk "${MAGISK_APK_WORKDIR}" --magisk-preinit-device "${MAGISK_PREINIT_DEVICE}")
   [ -z "${AVBROOT_PASS_AVB_FILE}" ] || AVBROOT_ARGS+=(--pass-avb-file "${AVBROOT_PASS_AVB_FILE}")
