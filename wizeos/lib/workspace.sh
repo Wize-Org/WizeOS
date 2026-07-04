@@ -12,6 +12,9 @@ prepare_builder_patches() {
   fi
 
   mkdir -p \
+    "${dest_patches}/profiles/secure" \
+    "${dest_patches}/profiles/balanced" \
+    "${dest_patches}/profiles/flexible" \
     "${dest_patches}/lsposed-compat" \
     "${dest_patches}/kernel/ksunext" \
     "${dest_patches}/kernel/susfs"
@@ -19,11 +22,12 @@ prepare_builder_patches() {
   chown -R "${BUILD_USER}:${BUILD_USER}" "${dest_patches}"
 
   PATCHES_DIR="${dest_patches}"
+  WIZEOS_PROFILE_PATCHES_DIR="${dest_patches}/profiles/${WIZEOS_PROFILE}"
   LSPOSED_PATCHES_DIR="${dest_patches}/lsposed-compat"
   KSUNEXT_KERNEL_PATCH_DIR="${dest_patches}/kernel/ksunext"
   SUSFS_KERNEL_PATCH_DIR="${dest_patches}/kernel/susfs"
 
-  export PATCHES_DIR LSPOSED_PATCHES_DIR KSUNEXT_KERNEL_PATCH_DIR SUSFS_KERNEL_PATCH_DIR
+  export PATCHES_DIR WIZEOS_PROFILE_PATCHES_DIR LSPOSED_PATCHES_DIR KSUNEXT_KERNEL_PATCH_DIR SUSFS_KERNEL_PATCH_DIR
 }
 
 prepare_workspace() {
