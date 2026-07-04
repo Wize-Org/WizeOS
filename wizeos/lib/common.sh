@@ -4,12 +4,21 @@ warn() { echo "WARNING: $*" >&2; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 require_root() { [ "$(id -u)" -eq 0 ] || die "Run as root. Builder steps run as ${BUILD_USER}."; }
 validate_bool() { case "$2" in 0|1) ;; *) die "$1 must be 0 or 1. Current value: $2" ;; esac; }
+wizeos_profile_manifest_file() {
+  case "${WIZEOS_PROFILE}" in
+    secure) echo "wizeos-secure.xml" ;;
+    balanced) echo "wizeos-balanced.xml" ;;
+    flexible) echo "wizeos-flexible.xml" ;;
+    *) die "WIZEOS_PROFILE must be secure, balanced, or flexible. Current value: ${WIZEOS_PROFILE}" ;;
+  esac
+}
 normalize_manifest_defaults() {
+  case "${WIZEOS_PROFILE}" in secure|balanced|flexible) ;; *) die "WIZEOS_PROFILE must be secure, balanced, or flexible. Current value: ${WIZEOS_PROFILE}" ;; esac
   case "${USE_WIZEOS_MANIFEST}" in 0|1) ;; *) die "USE_WIZEOS_MANIFEST must be 0 or 1" ;; esac
   if [ "${USE_WIZEOS_MANIFEST}" = "1" ]; then
     MANIFEST_URL="${MANIFEST_URL:-https://github.com/wizdom13/platform_manifest.git}"
     MANIFEST_BRANCH="${MANIFEST_BRANCH:-17}"
-    MANIFEST_FILE="${MANIFEST_FILE:-wizeos.xml}"
+    MANIFEST_FILE="${MANIFEST_FILE:-$(wizeos_profile_manifest_file)}"
     VERIFY_MANIFEST_TAG="${VERIFY_MANIFEST_TAG:-0}"
   else
     MANIFEST_URL="${MANIFEST_URL:-https://github.com/GrapheneOS/platform_manifest.git}"
@@ -17,7 +26,7 @@ normalize_manifest_defaults() {
     MANIFEST_FILE="${MANIFEST_FILE:-}"
     VERIFY_MANIFEST_TAG="${VERIFY_MANIFEST_TAG:-1}"
   fi
-  export MANIFEST_URL MANIFEST_BRANCH MANIFEST_FILE VERIFY_MANIFEST_TAG
+  export WIZEOS_PROFILE MANIFEST_URL MANIFEST_BRANCH MANIFEST_FILE VERIFY_MANIFEST_TAG
 }
 validate_config() {
   validate_bool SIGNED "${SIGNED}"
@@ -34,6 +43,7 @@ validate_config() {
   validate_bool SUSFS_BUNDLE_MODULE "${SUSFS_BUNDLE_MODULE}"
   validate_bool KERNEL_CLEAN "${KERNEL_CLEAN}"
 
+  case "${WIZEOS_PROFILE}" in secure|balanced|flexible) ;; *) die "WIZEOS_PROFILE must be secure, balanced, or flexible. Current value: ${WIZEOS_PROFILE}" ;; esac
   case "${ROOT}" in none|magisk|ksunext) ;; *) die "ROOT must be none, magisk, or ksunext. Current value: ${ROOT}" ;; esac
   case "${KSU_FLAVOR}" in ksunext) ;; *) die "KSU_FLAVOR=${KSU_FLAVOR} is no longer supported. Use ROOT=ksunext with KSU_FLAVOR=ksunext." ;; esac
   case "${KSU_INTEGRATION}" in setup|patch) ;; *) die "KSU_INTEGRATION must be setup or patch. Current value: ${KSU_INTEGRATION}" ;; esac
@@ -54,6 +64,7 @@ print_config() {
   echo "    Build number        : ${BUILD_NUMBER}"
   echo "    Build user          : ${BUILD_USER}"
   echo "    Workdir             : ${WORKDIR}"
+  echo "    Profile             : ${WIZEOS_PROFILE}"
   echo "    Start over          : ${START_OVER}"
   echo "    Clean out           : ${CLEAN_OUT}"
   echo "    Signed release      : ${SIGNED}"
@@ -76,6 +87,7 @@ print_config() {
     echo "    Kernel prebuilts    : ${KERNEL_OS_PREBUILT_DIR}"
   fi
   echo "    Patch dir           : ${PATCHES_DIR}"
+  echo "    Profile patch dir   : ${WIZEOS_PROFILE_PATCHES_DIR}"
   echo "    Update server       : ${UPDATE_SERVER}"
   echo "    Manifest URL        : ${MANIFEST_URL}"
   echo "    Manifest branch/ref : ${MANIFEST_BRANCH}"
