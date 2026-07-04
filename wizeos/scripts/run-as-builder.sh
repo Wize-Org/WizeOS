@@ -55,6 +55,22 @@ apply_patch_dir_required_in_repo() {
   done
 }
 
+apply_wizeos_profile_patch_dir() {
+  local profile="${WIZEOS_PROFILE:-balanced}"
+  case "${profile}" in
+    secure)
+      echo "==> WIZEOS_PROFILE=secure: skipping compatibility profile patches"
+      ;;
+    balanced|flexible)
+      apply_patch_dir "WIZEOS_PROFILE=${profile}" "${WIZEOS_PROFILE_PATCHES_DIR}"
+      ;;
+    *)
+      echo "ERROR: Unsupported WIZEOS_PROFILE=${profile}"
+      exit 1
+      ;;
+  esac
+}
+
 apply_lsposed_patch_dir() { apply_patch_dir "LSPOSED_COMPAT" "$1"; }
 
 kernel_should_build() {
@@ -187,6 +203,7 @@ PY
 
 android_build() {
   cd "$WORKDIR"
+  apply_wizeos_profile_patch_dir
   [ "${LSPOSED_COMPAT}" != "1" ] || apply_lsposed_patch_dir "${LSPOSED_PATCHES_DIR}"
   kernel_build_and_copy
   patch_updater_url
@@ -238,32 +255,26 @@ patch_magisk_ota() {
 
 copy_ksu_release_artifacts() {
   cd "$WORKDIR"; RELEASE_DIR="releases/${BUILD_NUMBER}/release-${DEVICE}-${BUILD_NUMBER}"
-  [ -d "${RELEASE_DIR}" ] || { echo "ERROR: Missing release directory: ${RELEASE_DIR}"; exit 1; }
-  OTA_ZIP="$(find "${RELEASE_DIR}" -maxdepth 1 -type f -name '*ota_update*.zip' ! -name '*-magisk.zip' ! -name '*-ksunext*.zip' | sort | head -n 1)"
-  [ -n "${OTA_ZIP}" ] || { echo "ERROR: Could not find OTA zip in ${RELEASE_DIR}"; exit 1; }
-  local suffix="ksunext"
-  if [ "${KSUNEXT_SUSFS}" = "1" ]; then suffix="${suffix}-susfs"; fi
-  KSU_OTA="${OTA_ZIP%.zip}-${suffix}.zip"
-  cp -a "${OTA_ZIP}" "${KSU_OTA}"
-  [ -z "${KSU_MANAGER_APK_WORKDIR}" ] || cp -a "${KSU_MANAGER_APK_WORKDIR}" "${RELEASE_DIR}/${KSU_MANAGER_RELEASE_NAME}"
-  [ -z "${KSU_ZYGISK_ZIP_WORKDIR}" ] || cp -a "${KSU_ZYGISK_ZIP_WORKDIR}" "${RELEASE_DIR}/${KSU_ZYGISK_RELEASE_NAME}"
-  [ -z "${SUSFS_MODULE_ZIP_WORKDIR}" ] || cp -a "${SUSFS_MODULE_ZIP_WORKDIR}" "${RELEASE_DIR}/susfs4ksu.zip"
-  echo "KernelSU Next OTA: ${KSU_OTA}"
+  [ -d "${RELEASE_DIR}" ] || { echo "ERROR: Missing release dir: ${RELEASE_DIR}"; exit 1; }
+  [ -z "${KSU_MANAGER_APK_WORKDIR:-}" ] || cp -f "${KSU_MANAGER_APK_WORKDIR}" "${RELEASE_DIR}/${KSU_MANAGER_RELEASE_NAME:-KernelSU_Next.apk}"
+  [ -z "${KSU_ZYGISK_ZIP_WORKDIR:-}" ] || cp -f "${KSU_ZYGISK_ZIP_WORKDIR}" "${RELEASE_DIR}/${KSU_ZYGISK_RELEASE_NAME:-Zygisk-Next.zip}"
+  [ "${KSUNEXT_SUSFS}" != "1" ] || [ -z "${SUSFS_MODULE_ZIP_WORKDIR:-}" ] || cp -f "${SUSFS_MODULE_ZIP_WORKDIR}" "${RELEASE_DIR}/susfs4ksu.zip"
 }
 
-# Backward-compatible function name.
-copy_ksunext_release_artifacts() { copy_ksu_release_artifacts; }
-
-signed_release() {
-  cd "$WORKDIR"; [ "${SIGNED}" = "1" ] || return 0
-  ensure_builder_release_ssh_keys; mkdir -p "releases/${BUILD_NUMBER}"
-  LOG="releases/${BUILD_NUMBER}/generate-release-${DEVICE}-${BUILD_NUMBER}.log"
-  if [ -n "${SIGNING_KEY_PASSPHRASE_FILE:-}" ] && [ -f "${SIGNING_KEY_PASSPHRASE_FILE}" ]; then (umask 077; script/generate-release.sh "$DEVICE" "$BUILD_NUMBER") < "${SIGNING_KEY_PASSPHRASE_FILE}" 2>&1 | tee "$LOG"; else (umask 077; script/generate-release.sh "$DEVICE" "$BUILD_NUMBER") 2>&1 | tee "$LOG"; fi
-  case "${ROOT}" in
-    magisk) patch_magisk_ota ;;
-    ksunext) copy_ksu_release_artifacts ;;
-  esac
-}
-
-echo "==> Configuring Git identity for repo"; git_identity_check
-case "${BUILDER_ACTION:-all}" in sync) repo_init_sync ;; kernel) kernel_build_and_copy ;; build) android_build ;; release) signed_release ;; magisk) patch_magisk_ota ;; ksunext) copy_ksu_release_artifacts ;; all) repo_init_sync; android_build; signed_release ;; *) echo "ERROR: Unknown BUILDER_ACTION=${BUILDER_ACTION}"; exit 1 ;; esac
+case "${BUILDER_ACTION:-all}" in
+  sync)
+    git_identity_check; repo_init_sync ;;
+  kernel)
+    kernel_build_and_copy ;;
+  build)
+    android_build ;;
+  release)
+    ensure_builder_release_ssh_keys; cd "$WORKDIR"; script/finalize.sh; copy_ksu_release_artifacts ;;
+  magisk)
+    patch_magisk_ota ;;
+  ksunext)
+    copy_ksu_release_artifacts ;;
+  all)
+    git_identity_check; repo_init_sync; android_build; ensure_builder_release_ssh_keys; copy_ksu_release_artifacts; [ "${ROOT}" != "magisk" ] || patch_magisk_ota ;;
+  *) echo "ERROR: Unknown BUILDER_ACTION=${BUILDER_ACTION}"; exit 1 ;;
+esac
