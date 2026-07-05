@@ -201,6 +201,14 @@ PY
   grep -n 'wizesoft\|releases.grapheneos\|update_base_url' "${UPDATER_CONFIG}" || true
 }
 
+setup_android_build_env() {
+  cd "$WORKDIR"
+  source build/envsetup.sh
+  lunch "${DEVICE}-cur-user"
+  unset BUILD_DATETIME
+  export BUILD_NUMBER="${BUILD_NUMBER:-${TAG}}" OFFICIAL_BUILD="${OFFICIAL_BUILD:-true}"
+}
+
 android_build() {
   cd "$WORKDIR"
   apply_wizeos_profile_patch_dir
@@ -249,6 +257,10 @@ generate_grapheneos_release() {
   cd "$WORKDIR"
   [ "${GENERATE_RELEASE:-1}" = "1" ] || { echo "==> GENERATE_RELEASE=0, skipping script/generate-release.sh"; return 0; }
   [ -x script/generate-release.sh ] || { echo "ERROR: Missing or non-executable script/generate-release.sh"; exit 1; }
+  if [ -z "${TARGET_PRODUCT:-}" ]; then
+    echo "==> Preparing Android build environment for release generation"
+    setup_android_build_env
+  fi
   ensure_builder_release_ssh_keys
   echo "==> Generating full GrapheneOS release artifacts"
   echo "    Device      : ${DEVICE}"
@@ -338,7 +350,7 @@ case "${BUILDER_ACTION:-all}" in
   build)
     android_build ;;
   release)
-    cd "$WORKDIR"; script/finalize.sh; generate_grapheneos_release; copy_ksu_release_artifacts ;;
+    cd "$WORKDIR"; setup_android_build_env; script/finalize.sh; generate_grapheneos_release; copy_ksu_release_artifacts ;;
   magisk)
     patch_magisk_ota ;;
   ksunext)
