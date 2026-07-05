@@ -2,7 +2,7 @@ diff --git a/frameworks/base/core/java/android/ext/settings/ExtSettings.java b/f
 index 821f3d2..3d28cd5 100644
 --- a/frameworks/base/core/java/android/ext/settings/ExtSettings.java
 +++ b/frameworks/base/core/java/android/ext/settings/ExtSettings.java
-@@ -22,2 +22,5 @@ import java.util.function.ToIntFunction;
+@@ -24,3 +24,6 @@ public class ExtSettings {
  public class ExtSettings {
  
 +    // WizeOS Flexible: keep the classic fork path by default for LSPosed / module compatibility.
@@ -13,12 +13,13 @@ diff --git a/frameworks/base/core/java/android/ext/settings/app/AswDenyNativeDeb
 index 0e2b1fc..1f7a1d2 100644
 --- a/frameworks/base/core/java/android/ext/settings/app/AswDenyNativeDebug.java
 +++ b/frameworks/base/core/java/android/ext/settings/app/AswDenyNativeDebug.java
-@@ -8,3 +8,2 @@ import android.content.pm.GosPackageStateFlag;
+@@ -8,5 +8,4 @@ import android.content.pm.GosPackageStateFlag;
+ import android.content.pm.GosPackageStateFlag;
  import android.ext.settings.ExtSettings;
  
 -import com.android.internal.os.SELinuxFlags;
  import com.android.server.os.nano.AppCompatProtos;
-@@ -25,11 +24,2 @@ public class AswDenyNativeDebug extends AppSwitch {
+@@ -27,12 +26,3 @@ public Boolean getImmutableValue(Context ctx, int userId, ApplicationInfo appInfo,
                                       GosPackageState ps, StateInfo si) {
 -        if (appInfo.isSystemApp() && !SELinuxFlags.isSystemAppSepolicyWeakeningAllowed()) {
 -            si.immutabilityReason = IR_IS_SYSTEM_APP;
@@ -31,7 +32,7 @@ index 0e2b1fc..1f7a1d2 100644
 -        }
  
          return null;
-@@ -41,6 +31,2 @@ public class AswDenyNativeDebug extends AppSwitch {
+@@ -43,7 +33,3 @@ protected boolean getDefaultValueInner(Context ctx, int userId, ApplicationInfo appInfo,
                                             GosPackageState ps, StateInfo si) {
 -        if (appInfo.isSystemApp()) {
 -            return true;
@@ -43,14 +44,15 @@ diff --git a/frameworks/base/core/java/android/ext/settings/app/AswRestrictMemor
 index 2dd6e8d..0748ed7 100644
 --- a/frameworks/base/core/java/android/ext/settings/app/AswRestrictMemoryDynCodeLoading.java
 +++ b/frameworks/base/core/java/android/ext/settings/app/AswRestrictMemoryDynCodeLoading.java
-@@ -7,6 +7,3 @@ import android.content.pm.GosPackageStateFlag;
+@@ -7,7 +7,4 @@ import android.content.pm.GosPackageStateFlag;
+ import android.content.pm.GosPackageStateFlag;
  import android.ext.settings.ExtSettings;
 -import android.util.ArraySet;
  
 -import com.android.internal.R;
 -import com.android.internal.os.SELinuxFlags;
  import com.android.server.os.nano.AppCompatProtos;
-@@ -24,14 +21,2 @@ public class AswRestrictMemoryDynCodeLoading extends AppSwitch {
+@@ -26,14 +23,2 @@ private AswRestrictMemoryDynCodeLoading() {
  
 -    private static volatile ArraySet<String> allowedSystemPkgs;
 -
@@ -65,7 +67,7 @@ index 2dd6e8d..0748ed7 100644
 -    }
 -
      @Override
-@@ -39,18 +24,2 @@ public class AswRestrictMemoryDynCodeLoading extends AppSwitch {
+@@ -41,19 +26,3 @@ public Boolean getImmutableValue(Context ctx, int userId, ApplicationInfo appInfo,
                                       GosPackageState ps, StateInfo si) {
 -        if (appInfo.isSystemApp()) {
 -            if (shouldAllowByDefaultToSystemPkg(ctx, appInfo.packageName)) {
@@ -85,7 +87,7 @@ index 2dd6e8d..0748ed7 100644
 -        }
  
          return null;
-@@ -62,8 +31,4 @@ public class AswRestrictMemoryDynCodeLoading extends AppSwitch {
+@@ -64,8 +33,4 @@ protected boolean getDefaultValueInner(Context ctx, int userId, ApplicationInfo appInfo,
                                             GosPackageState ps, StateInfo si) {
 -        if (appInfo.isSystemApp()) {
 -            return !shouldAllowByDefaultToSystemPkg(ctx, appInfo.packageName);
@@ -100,7 +102,8 @@ diff --git a/frameworks/base/core/java/android/ext/settings/app/AswRestrictStora
 index 31417bf..8cf0bc1 100644
 --- a/frameworks/base/core/java/android/ext/settings/app/AswRestrictStorageDynCodeLoading.java
 +++ b/frameworks/base/core/java/android/ext/settings/app/AswRestrictStorageDynCodeLoading.java
-@@ -10,6 +10,3 @@ import android.ext.AppInfoExtFlag;
+@@ -10,8 +10,5 @@ import android.ext.AppInfoExtFlag;
+ import android.ext.AppInfoExtFlag;
  import android.ext.PackageId;
  import android.ext.settings.ExtSettings;
 -import android.util.ArraySet;
@@ -108,7 +111,7 @@ index 31417bf..8cf0bc1 100644
 -import com.android.internal.R;
 -import com.android.internal.os.SELinuxFlags;
  import com.android.server.os.nano.AppCompatProtos;
-@@ -27,14 +24,2 @@ public class AswRestrictStorageDynCodeLoading extends AppSwitch {
+@@ -29,14 +26,2 @@ private AswRestrictStorageDynCodeLoading() {
  
 -    private static volatile ArraySet<String> allowedSystemPkgs;
 -
@@ -123,7 +126,7 @@ index 31417bf..8cf0bc1 100644
 -    }
 -
      @Override
-@@ -42,18 +27,2 @@ public class AswRestrictStorageDynCodeLoading extends AppSwitch {
+@@ -44,19 +29,3 @@ public Boolean getImmutableValue(Context ctx, int userId, ApplicationInfo appInfo,
                                       GosPackageState ps, StateInfo si) {
 -        if (appInfo.isSystemApp()) {
 -            if (shouldAllowByDefaultToSystemPkg(ctx, appInfo.packageName)) {
@@ -143,7 +146,7 @@ index 31417bf..8cf0bc1 100644
 -        }
  
          return null;
-@@ -75,12 +44,8 @@ public class AswRestrictStorageDynCodeLoading extends AppSwitch {
+@@ -77,11 +46,7 @@ protected boolean getDefaultValueInner(Context ctx, int userId, ApplicationInfo appInfo,
                                             GosPackageState ps, StateInfo si) {
 -        if (appInfo.isSystemApp()) {
 -            return !shouldAllowByDefaultToSystemPkg(ctx, appInfo.packageName);
@@ -160,7 +163,7 @@ index 31417bf..8cf0bc1 100644
 +                // Dynamite modules are loaded from writable data storage of GmsCore
 +                return false;
              }
-@@ -87,5 +52,4 @@ public class AswRestrictStorageDynCodeLoading extends AppSwitch {
+@@ -88,5 +53,5 @@ protected boolean getDefaultValueInner(Context ctx, int userId, ApplicationInfo appInfo,
 -
 -            si.defaultValueReason = DVR_DEFAULT_SETTING;
 -            return ExtSettings.RESTRICT_STORAGE_DYN_CODE_LOADING_BY_DEFAULT.get(ctx, userId);
@@ -173,14 +176,15 @@ diff --git a/frameworks/base/core/java/android/ext/settings/app/AswRestrictWebVi
 index 8ef413d..2f38060 100644
 --- a/frameworks/base/core/java/android/ext/settings/app/AswRestrictWebViewDynCodeLoading.java
 +++ b/frameworks/base/core/java/android/ext/settings/app/AswRestrictWebViewDynCodeLoading.java
-@@ -7,6 +7,2 @@ import android.content.pm.GosPackageStateFlag;
+@@ -7,7 +7,3 @@ import android.content.pm.GosPackageStateFlag;
+ import android.content.pm.GosPackageStateFlag;
  import android.ext.settings.ExtSettings;
 -import android.util.ArraySet;
 -
 -import com.android.internal.R;
 -import com.android.internal.os.SELinuxFlags;
  
-@@ -21,14 +17,2 @@ public class AswRestrictWebViewDynCodeLoading extends AppSwitch {
+@@ -23,14 +19,2 @@ private AswRestrictWebViewDynCodeLoading() {
  
 -    private static volatile ArraySet<String> allowedSystemPkgs;
 -
@@ -195,7 +199,7 @@ index 8ef413d..2f38060 100644
 -    }
 -
      @Override
-@@ -36,13 +20,2 @@ public class AswRestrictWebViewDynCodeLoading extends AppSwitch {
+@@ -38,14 +22,3 @@ public Boolean getImmutableValue(Context ctx, int userId, ApplicationInfo appInfo,
                                       GosPackageState ps, StateInfo si) {
 -        if (appInfo.isSystemApp()) {
 -            if (shouldAllowByDefaultToSystemPackage(ctx, appInfo.packageName)) {
@@ -210,7 +214,7 @@ index 8ef413d..2f38060 100644
 -        }
  
          return null;
-@@ -54,7 +27,3 @@ public class AswRestrictWebViewDynCodeLoading extends AppSwitch {
+@@ -56,7 +29,3 @@ protected boolean getDefaultValueInner(Context ctx, int userId, ApplicationInfo appInfo,
                                             GosPackageState ps, StateInfo si) {
 -        if (appInfo.isSystemApp()) {
 -            return !shouldAllowByDefaultToSystemPackage(ctx, appInfo.packageName);
@@ -223,7 +227,7 @@ diff --git a/frameworks/base/core/java/android/ext/settings/app/AswUseExtendedVa
 index 3f20df3..a22c8b3 100644
 --- a/frameworks/base/core/java/android/ext/settings/app/AswUseExtendedVaSpace.java
 +++ b/frameworks/base/core/java/android/ext/settings/app/AswUseExtendedVaSpace.java
-@@ -24,17 +24,2 @@ public class AswUseExtendedVaSpace extends AppSwitch {
+@@ -26,18 +26,3 @@ public Boolean getImmutableValue(Context ctx, int userId, ApplicationInfo appInfo,
                                       GosPackageState ps, StateInfo si) {
 -        if (AswUseHardenedMalloc.I.get(ctx, userId, appInfo, ps)) {
 -            si.immutabilityReason = IR_REQUIRED_BY_HARDENED_MALLOC;
@@ -246,12 +250,13 @@ diff --git a/frameworks/base/core/java/android/ext/settings/app/AswUseHardenedMa
 index d02a8d2..75cb19b 100644
 --- a/frameworks/base/core/java/android/ext/settings/app/AswUseHardenedMalloc.java
 +++ b/frameworks/base/core/java/android/ext/settings/app/AswUseHardenedMalloc.java
-@@ -9,4 +9,2 @@ import com.android.server.os.nano.AppCompatProtos;
+@@ -10,5 +10,3 @@ import com.android.server.os.nano.AppCompatProtos;
+ import com.android.server.os.nano.AppCompatProtos;
  
 -import dalvik.system.VMRuntime;
 -
  /** @hide */
-@@ -24,30 +22,2 @@ public class AswUseHardenedMalloc extends AppSwitch {
+@@ -26,31 +24,3 @@ public Boolean getImmutableValue(Context ctx, int userId, ApplicationInfo appInfo,
                                       GosPackageState ps, StateInfo si) {
 -        String primaryAbi = appInfo.primaryCpuAbi;
 -        if (primaryAbi == null) {
@@ -283,7 +288,7 @@ index d02a8d2..75cb19b 100644
 -        }
  
          return null;
-@@ -59,3 +29,3 @@ public class AswUseHardenedMalloc extends AppSwitch {
+@@ -61,3 +31,3 @@ protected boolean getDefaultValueInner(Context ctx, int userId, ApplicationInfo appInfo,
                                             GosPackageState ps, StateInfo si) {
 -        return true;
 +        return false;
@@ -292,7 +297,7 @@ diff --git a/frameworks/base/core/java/android/ext/settings/app/AswUseMemoryTagg
 index 1201529..79aa57c 100644
 --- a/frameworks/base/core/java/android/ext/settings/app/AswUseMemoryTagging.java
 +++ b/frameworks/base/core/java/android/ext/settings/app/AswUseMemoryTagging.java
-@@ -27,32 +27,2 @@ public class AswUseMemoryTagging extends AppSwitch {
+@@ -29,33 +29,3 @@ public Boolean getImmutableValue(Context ctx, int userId, ApplicationInfo appInfo,
                                       GosPackageState ps, StateInfo si) {
 -        final String primaryAbi = appInfo.primaryCpuAbi;
 -        if (primaryAbi == null) {
@@ -329,20 +334,31 @@ index 1201529..79aa57c 100644
 diff --git a/frameworks/base/core/java/com/android/internal/os/ZygoteConnection.java b/frameworks/base/core/java/com/android/internal/os/ZygoteConnection.java
 --- a/frameworks/base/core/java/com/android/internal/os/ZygoteConnection.java
 +++ b/frameworks/base/core/java/com/android/internal/os/ZygoteConnection.java
-@@ -58 +58,6 @@ class ZygoteConnection {
+@@ -56,6 +56,11 @@
+ class ZygoteConnection {
+     private static final String TAG = "Zygote";
  
 +    // WizeOS Flexible: fully disable GrapheneOS exec-based app spawning for
 +    // LSPosed / Xposed module compatibility. This keeps apps on the classic
 +    // zygoteInit path and prevents the post-injection ExecInit re-exec.
 +    private static final boolean WIZEOS_DISABLE_EXEC_SPAWNING_FOR_COMPAT = true;
 +
-@@ -245,3 +250,4 @@ Runnable processCommand(ZygoteServer zygoteServer, boolean multipleOK) {
+     /**
+      * The command socket.
+      *
+@@ -243,7 +248,8 @@ Runnable processCommand(ZygoteServer zygoteServer, boolean multipleOK) {
+                     fdsToClose[1] = zygoteFd.getInt$();
+                 }
  
 -                if (parsedArgs.mInvokeWith != null || ExtSettings.EXEC_SPAWNING.get() || parsedArgs.mStartChildZygote
 +                if (parsedArgs.mInvokeWith != null || WIZEOS_DISABLE_EXEC_SPAWNING_FOR_COMPAT
 +                        || ExtSettings.EXEC_SPAWNING.get() || parsedArgs.mStartChildZygote
                          || !multipleOK || peer.getUid() != Process.SYSTEM_UID
-@@ -533,6 +539,5 @@ private Runnable handleChildProc(ZygoteArguments parsedArgs,
+                         || (parsedArgs.mRuntimeFlags & Zygote.RUNTIME_FLAGS_DEPENDENT_ON_EXEC_SPAWNING) != 0) {
+                     Log.w(TAG, "Resorting to Java fork code; multipleOK = " + multipleOK
+@@ -531,11 +537,10 @@ private Runnable handleChildProc(ZygoteArguments parsedArgs,
+         } else {
+             if (!isZygote) {
                  final int runtimeFlags = parsedArgs.mRuntimeFlags;
 -                boolean useExecInit =
 -                        ((runtimeFlags & Zygote.RUNTIME_FLAGS_DEPENDENT_ON_EXEC_SPAWNING) != 0
@@ -353,14 +369,24 @@ diff --git a/frameworks/base/core/java/com/android/internal/os/ZygoteConnection.
 -                        (runtimeFlags & ApplicationInfo.FLAG_DEBUGGABLE) == 0;
 +                        && (runtimeFlags & ApplicationInfo.FLAG_DEBUGGABLE) == 0;
  
-@@ -562,4 +567,4 @@ private Runnable handleChildProc(ZygoteArguments parsedArgs,
+                 if (useExecInit) {
+                     ExecInit.execApplication(parsedArgs.mNiceName, parsedArgs.mTargetSdkVersion,
+@@ -560,8 +565,8 @@ private Runnable handleChildProc(ZygoteArguments parsedArgs,
+     /**
+      * Handles post-fork cleanup of parent proc
       *
 -     * @param pid != 0; pid of child if &gt; 0 or indication of failed fork
 -     * if &lt; 0;
 +     * @param pid != 0; pid of child if > 0 or indication of failed fork
 +     * if < 0;
       * @param pipeFd null-ok; pipe for communication with child.
-@@ -582,3 +587,2 @@ private void handleParentProc(int pid, FileDescriptor pipeFd) {
+      */
+     private void handleParentProc(int pid, FileDescriptor pipeFd) {
+@@ -580,7 +585,6 @@ private void handleParentProc(int pid, FileDescriptor pipeFd) {
+                 StructPollfd[] fds = new StructPollfd[] {
+                         new StructPollfd()
                  };
 -
                  byte[] data = new byte[BYTES_REQUIRED];
+ 
+                 int remainingSleepTime = WRAPPED_PID_TIMEOUT_MILLIS;
