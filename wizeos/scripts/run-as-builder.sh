@@ -214,7 +214,10 @@ android_build() {
   lunch "${DEVICE}-cur-user"
   unset BUILD_DATETIME; export BUILD_NUMBER="${BUILD_NUMBER:-${TAG}}" OFFICIAL_BUILD="${OFFICIAL_BUILD:-true}"
   [ "${CLEAN_OUT}" != "1" ] || rm -rf out
-  m target-files-package -j"$JOBS"; m otatools-package -j"$JOBS"; script/finalize.sh
+  m target-files-package -j"$JOBS"
+  m otatools-package -j"$JOBS"
+  script/finalize.sh
+  generate_grapheneos_release
 }
 
 ensure_builder_release_ssh_keys() {
@@ -240,6 +243,17 @@ ensure_builder_release_ssh_keys() {
   chmod 0644 keys/id_ed25519.pub "keys/${DEVICE}/id_ed25519.pub" "${release_keys_dir}/id_ed25519.pub" "${release_output_keys_dir}/id_ed25519.pub"
   ssh-keygen -y -f keys/id_ed25519 >/dev/null
   echo "==> Release SSH key ready: keys/id_ed25519"
+}
+
+generate_grapheneos_release() {
+  cd "$WORKDIR"
+  [ "${GENERATE_RELEASE:-1}" = "1" ] || { echo "==> GENERATE_RELEASE=0, skipping script/generate-release.sh"; return 0; }
+  [ -x script/generate-release.sh ] || { echo "ERROR: Missing or non-executable script/generate-release.sh"; exit 1; }
+  ensure_builder_release_ssh_keys
+  echo "==> Generating full GrapheneOS release artifacts"
+  echo "    Device      : ${DEVICE}"
+  echo "    Build number: ${BUILD_NUMBER}"
+  script/generate-release.sh "${DEVICE}" "${BUILD_NUMBER}"
 }
 
 find_release_ota_zip() {
@@ -324,12 +338,12 @@ case "${BUILDER_ACTION:-all}" in
   build)
     android_build ;;
   release)
-    ensure_builder_release_ssh_keys; cd "$WORKDIR"; script/finalize.sh; copy_ksu_release_artifacts ;;
+    cd "$WORKDIR"; script/finalize.sh; generate_grapheneos_release; copy_ksu_release_artifacts ;;
   magisk)
     patch_magisk_ota ;;
   ksunext)
     copy_ksu_release_artifacts ;;
   all)
-    git_identity_check; repo_init_sync; android_build; ensure_builder_release_ssh_keys; copy_ksu_release_artifacts; [ "${ROOT}" != "magisk" ] || patch_magisk_ota ;;
+    git_identity_check; repo_init_sync; android_build; copy_ksu_release_artifacts; [ "${ROOT}" != "magisk" ] || patch_magisk_ota ;;
   *) echo "ERROR: Unknown BUILDER_ACTION=${BUILDER_ACTION}"; exit 1 ;;
 esac
