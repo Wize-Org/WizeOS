@@ -4,6 +4,11 @@ warn() { echo "WARNING: $*" >&2; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 require_root() { [ "$(id -u)" -eq 0 ] || die "Run as root. Builder steps run as ${BUILD_USER}."; }
 validate_bool() { case "$2" in 0|1) ;; *) die "$1 must be 0 or 1. Current value: $2" ;; esac; }
+has_patch_files() {
+  local patch_dir="$1"
+  [ -d "${patch_dir}" ] || return 1
+  find "${patch_dir}" -type f \( -name '*.patch' -o -name '*.diff' \) -print -quit | grep -q .
+}
 wizeos_profile_manifest_file() {
   case "${WIZEOS_PROFILE}" in
     secure) echo "wizeos-secure.xml" ;;
@@ -54,6 +59,9 @@ validate_config() {
   [ "${ROOT}" != "ksunext" ] || [ "${SIGNED}" = "1" ] || die "ROOT=ksunext requires SIGNED=1"
   [ "${ROOT}" != "ksunext" ] || [ "${KSUNEXT_SUSFS}" != "1" ] || [ "${SUSFS_PATCH_KERNEL}" = "1" ] || warn "KSUNEXT_SUSFS=1 but SUSFS_PATCH_KERNEL=0. This will only bundle module files."
   [ "${KSUNEXT_SUSFS}" != "1" ] || [ "${ROOT}" = "ksunext" ] || die "KSUNEXT_SUSFS=1 requires ROOT=ksunext"
+  if [ "${ROOT}" = "ksunext" ] && [ "${SUSFS_PATCH_KERNEL}" = "1" ] && ! has_patch_files "${SUSFS_KERNEL_PATCH_DIR}"; then
+    die "SUSFS_PATCH_KERNEL=1 but no .patch or .diff files were found in ${SUSFS_KERNEL_PATCH_DIR}. Add matching muzel/Android 17 SUSFS kernel patches there, or rerun with KSUNEXT_SUSFS=0 SUSFS_PATCH_KERNEL=0 SUSFS_BUNDLE_MODULE=0."
+  fi
   [ "${LSPOSED_COMPAT}" != "1" ] || [ "${USE_WIZEOS_MANIFEST}" = "1" ] || die "LSPOSED_COMPAT=1 requires USE_WIZEOS_MANIFEST=1"
 }
 print_config() {
