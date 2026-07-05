@@ -99,10 +99,37 @@ kernel_sync() {
   fi
 }
 
+resolve_kernel_source_dir() {
+  local candidates=()
+  [ -z "${KERNEL_SOURCE_SUBDIR:-}" ] || candidates+=("${KERNEL_WORKDIR}/${KERNEL_SOURCE_SUBDIR}")
+  [ -z "${KSU_KERNEL_SOURCE_SUBDIR:-}" ] || candidates+=("${KERNEL_WORKDIR}/${KSU_KERNEL_SOURCE_SUBDIR}")
+  candidates+=(
+    "${KERNEL_WORKDIR}/common/ack"
+    "${KERNEL_WORKDIR}/common"
+    "${KERNEL_WORKDIR}"
+  )
+
+  local d
+  for d in "${candidates[@]}"; do
+    [ -n "${d}" ] || continue
+    if [ -d "${d}/drivers" ] || [ -d "${d}/common/drivers" ]; then
+      echo "${d}"
+      return 0
+    fi
+  done
+
+  echo "ERROR: Could not find kernel source dir with drivers/ or common/drivers under ${KERNEL_WORKDIR}" >&2
+  echo "Set KERNEL_SOURCE_SUBDIR=common/ack if this kernel uses the GrapheneOS Pixel wrapper layout." >&2
+  exit 1
+}
+
 run_ksu_setup_script() {
-  cd "${KERNEL_WORKDIR}"
+  local kernel_source_dir
+  kernel_source_dir="$(resolve_kernel_source_dir)"
+  cd "${kernel_source_dir}"
   local setup_script="${HOME}/wizeos-ksunext-setup.sh"
   [ -n "${KSU_SETUP_URL_RESOLVED}" ] || { echo "ERROR: KernelSU Next setup integration requires KSU_SETUP_URL_RESOLVED"; exit 1; }
+  echo "==> KernelSU Next: using kernel source ${kernel_source_dir}"
   echo "==> KernelSU Next: downloading setup script"
   echo "    ${KSU_SETUP_URL_RESOLVED}"
   curl -fsSL "${KSU_SETUP_URL_RESOLVED}" -o "${setup_script}"
@@ -122,13 +149,20 @@ kernel_apply_root_patches() {
   git clean -fdx
   git submodule update --init --recursive
 
+  local kernel_source_dir
+  kernel_source_dir="$(resolve_kernel_source_dir)"
+  if git -C "${kernel_source_dir}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "${kernel_source_dir}" reset --hard HEAD
+    git -C "${kernel_source_dir}" clean -fdx
+  fi
+
   if [ "${ROOT}" = "ksunext" ] && [ "${KSU_PATCH_KERNEL}" = "1" ]; then
     case "${KSU_INTEGRATION_RESOLVED}" in
       setup)
         run_ksu_setup_script
         ;;
       patch)
-        apply_patch_dir_required_in_repo "KernelSU Next kernel patches" "${KSU_KERNEL_PATCH_DIR_RESOLVED}" "${KERNEL_WORKDIR}"
+        apply_patch_dir_required_in_repo "KernelSU Next kernel patches" "${KSU_KERNEL_PATCH_DIR_RESOLVED}" "${kernel_source_dir}"
         ;;
       *)
         echo "ERROR: Unsupported KSU_INTEGRATION_RESOLVED=${KSU_INTEGRATION_RESOLVED}"
@@ -140,7 +174,7 @@ kernel_apply_root_patches() {
   fi
 
   if [ "${ROOT}" = "ksunext" ] && [ "${SUSFS_PATCH_KERNEL}" = "1" ]; then
-    apply_patch_dir_required_in_repo "SUSFS kernel patches" "${SUSFS_KERNEL_PATCH_DIR}" "${KERNEL_WORKDIR}"
+    apply_patch_dir_required_in_repo "SUSFS kernel patches" "${SUSFS_KERNEL_PATCH_DIR}" "${kernel_source_dir}"
   else
     echo "==> Skipping SUSFS kernel patches"
   fi
