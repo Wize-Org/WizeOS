@@ -1,0 +1,366 @@
+diff --git a/frameworks/base/core/java/android/ext/settings/ExtSettings.java b/frameworks/base/core/java/android/ext/settings/ExtSettings.java
+index 821f3d2..3d28cd5 100644
+--- a/frameworks/base/core/java/android/ext/settings/ExtSettings.java
++++ b/frameworks/base/core/java/android/ext/settings/ExtSettings.java
+@@ -22,2 +22,5 @@ import java.util.function.ToIntFunction;
+ public class ExtSettings {
+ 
++    // WizeOS Flexible: keep the classic fork path by default for LSPosed / module compatibility.
++    // In ZygoteConnection, a true value selects forkAndSpecialize instead of the forkSimpleApps
++    // path that later enters ExecInit with IS_EXEC_SPAWNED_APP_PROCESS=1.
+     public static final BoolSysProperty EXEC_SPAWNING = new BoolSysProperty(
+diff --git a/frameworks/base/core/java/android/ext/settings/app/AswDenyNativeDebug.java b/frameworks/base/core/java/android/ext/settings/app/AswDenyNativeDebug.java
+index 0e2b1fc..1f7a1d2 100644
+--- a/frameworks/base/core/java/android/ext/settings/app/AswDenyNativeDebug.java
++++ b/frameworks/base/core/java/android/ext/settings/app/AswDenyNativeDebug.java
+@@ -8,3 +8,2 @@ import android.content.pm.GosPackageStateFlag;
+ import android.ext.settings.ExtSettings;
+ 
+-import com.android.internal.os.SELinuxFlags;
+ import com.android.server.os.nano.AppCompatProtos;
+@@ -25,11 +24,2 @@ public class AswDenyNativeDebug extends AppSwitch {
+                                      GosPackageState ps, StateInfo si) {
+-        if (appInfo.isSystemApp() && !SELinuxFlags.isSystemAppSepolicyWeakeningAllowed()) {
+-            si.immutabilityReason = IR_IS_SYSTEM_APP;
+-            return true;
+-        }
+-
+-        if (ps.hasFlag(GosPackageStateFlag.ENABLE_EXPLOIT_PROTECTION_COMPAT_MODE)) {
+-            si.immutabilityReason = IR_EXPLOIT_PROTECTION_COMPAT_MODE;
+-            return false;
+-        }
+ 
+         return null;
+@@ -41,6 +31,2 @@ public class AswDenyNativeDebug extends AppSwitch {
+                                            GosPackageState ps, StateInfo si) {
+-        if (appInfo.isSystemApp()) {
+-            return true;
+-        }
+-
+         si.defaultValueReason = DVR_DEFAULT_SETTING;
+         return !ExtSettings.ALLOW_NATIVE_DEBUG_BY_DEFAULT.get(ctx);
+diff --git a/frameworks/base/core/java/android/ext/settings/app/AswRestrictMemoryDynCodeLoading.java b/frameworks/base/core/java/android/ext/settings/app/AswRestrictMemoryDynCodeLoading.java
+index 2dd6e8d..0748ed7 100644
+--- a/frameworks/base/core/java/android/ext/settings/app/AswRestrictMemoryDynCodeLoading.java
++++ b/frameworks/base/core/java/android/ext/settings/app/AswRestrictMemoryDynCodeLoading.java
+@@ -7,6 +7,3 @@ import android.content.pm.GosPackageStateFlag;
+ import android.ext.settings.ExtSettings;
+-import android.util.ArraySet;
+ 
+-import com.android.internal.R;
+-import com.android.internal.os.SELinuxFlags;
+ import com.android.server.os.nano.AppCompatProtos;
+@@ -24,14 +21,2 @@ public class AswRestrictMemoryDynCodeLoading extends AppSwitch {
+ 
+-    private static volatile ArraySet<String> allowedSystemPkgs;
+-
+-    private static boolean shouldAllowByDefaultToSystemPkg(Context ctx, String pkg) {
+-        var set = allowedSystemPkgs;
+-        if (set == null) {
+-            set = new ArraySet<>(ctx.getResources()
+-                .getStringArray(R.array.system_pkgs_allowed_memory_dyn_code_loading_by_default));
+-            allowedSystemPkgs = set;
+-        }
+-        return set.contains(pkg);
+-    }
+-
+     @Override
+@@ -39,18 +24,2 @@ public class AswRestrictMemoryDynCodeLoading extends AppSwitch {
+                                      GosPackageState ps, StateInfo si) {
+-        if (appInfo.isSystemApp()) {
+-            if (shouldAllowByDefaultToSystemPkg(ctx, appInfo.packageName)) {
+-                // allow manual restriction
+-                return null;
+-            }
+-            if (SELinuxFlags.isSystemAppSepolicyWeakeningAllowed()) {
+-                return null;
+-            }
+-            si.immutabilityReason = IR_IS_SYSTEM_APP;
+-            return true;
+-        }
+-
+-        if (ps.hasFlag(GosPackageStateFlag.ENABLE_EXPLOIT_PROTECTION_COMPAT_MODE)) {
+-            si.immutabilityReason = IR_EXPLOIT_PROTECTION_COMPAT_MODE;
+-            return false;
+-        }
+ 
+         return null;
+@@ -62,8 +31,4 @@ public class AswRestrictMemoryDynCodeLoading extends AppSwitch {
+                                            GosPackageState ps, StateInfo si) {
+-        if (appInfo.isSystemApp()) {
+-            return !shouldAllowByDefaultToSystemPkg(ctx, appInfo.packageName);
+-        } else {
+-            si.defaultValueReason = DVR_DEFAULT_SETTING;
+-            return ExtSettings.RESTRICT_MEMORY_DYN_CODE_LOADING_BY_DEFAULT.get(ctx, userId);
+-        }
++        si.defaultValueReason = DVR_DEFAULT_SETTING;
++        return ExtSettings.RESTRICT_MEMORY_DYN_CODE_LOADING_BY_DEFAULT.get(ctx, userId);
+     }
+diff --git a/frameworks/base/core/java/android/ext/settings/app/AswRestrictStorageDynCodeLoading.java b/frameworks/base/core/java/android/ext/settings/app/AswRestrictStorageDynCodeLoading.java
+index 31417bf..8cf0bc1 100644
+--- a/frameworks/base/core/java/android/ext/settings/app/AswRestrictStorageDynCodeLoading.java
++++ b/frameworks/base/core/java/android/ext/settings/app/AswRestrictStorageDynCodeLoading.java
+@@ -10,6 +10,3 @@ import android.ext.AppInfoExtFlag;
+ import android.ext.PackageId;
+ import android.ext.settings.ExtSettings;
+-import android.util.ArraySet;
+ 
+-import com.android.internal.R;
+-import com.android.internal.os.SELinuxFlags;
+ import com.android.server.os.nano.AppCompatProtos;
+@@ -27,14 +24,2 @@ public class AswRestrictStorageDynCodeLoading extends AppSwitch {
+ 
+-    private static volatile ArraySet<String> allowedSystemPkgs;
+-
+-    private static boolean shouldAllowByDefaultToSystemPkg(Context ctx, String pkg) {
+-        var set = allowedSystemPkgs;
+-        if (set == null) {
+-            set = new ArraySet<>(ctx.getResources()
+-                .getStringArray(R.array.system_pkgs_allowed_storage_dyn_code_loading_by_default));
+-            allowedSystemPkgs = set;
+-        }
+-        return set.contains(pkg);
+-    }
+-
+     @Override
+@@ -42,18 +27,2 @@ public class AswRestrictStorageDynCodeLoading extends AppSwitch {
+                                      GosPackageState ps, StateInfo si) {
+-        if (appInfo.isSystemApp()) {
+-            if (shouldAllowByDefaultToSystemPkg(ctx, appInfo.packageName)) {
+-                // allow manual restriction
+-                return null;
+-            }
+-            if (SELinuxFlags.isSystemAppSepolicyWeakeningAllowed()) {
+-                return null;
+-            }
+-            si.immutabilityReason = IR_IS_SYSTEM_APP;
+-            return true;
+-        }
+-
+-        if (ps.hasFlag(GosPackageStateFlag.ENABLE_EXPLOIT_PROTECTION_COMPAT_MODE)) {
+-            si.immutabilityReason = IR_EXPLOIT_PROTECTION_COMPAT_MODE;
+-            return false;
+-        }
+ 
+         return null;
+@@ -75,12 +44,8 @@ public class AswRestrictStorageDynCodeLoading extends AppSwitch {
+                                            GosPackageState ps, StateInfo si) {
+-        if (appInfo.isSystemApp()) {
+-            return !shouldAllowByDefaultToSystemPkg(ctx, appInfo.packageName);
+-        } else {
+-            if (appInfo.ext().hasFlag(AppInfoExtFlag.HAS_GMSCORE_CLIENT_LIBRARY)) {
+-                if (isGmsCoreInstalled(ctx, userId)) {
+-                    si.defaultValueReason = DVR_APP_IS_CLIENT_OF_GMSCORE;
+-                    // Dynamite modules are loaded from writable data storage of GmsCore
+-                    return false;
+-                }
++        if (appInfo.ext().hasFlag(AppInfoExtFlag.HAS_GMSCORE_CLIENT_LIBRARY)) {
++            if (isGmsCoreInstalled(ctx, userId)) {
++                si.defaultValueReason = DVR_APP_IS_CLIENT_OF_GMSCORE;
++                // Dynamite modules are loaded from writable data storage of GmsCore
++                return false;
+             }
+@@ -87,5 +52,4 @@ public class AswRestrictStorageDynCodeLoading extends AppSwitch {
+-
+-            si.defaultValueReason = DVR_DEFAULT_SETTING;
+-            return ExtSettings.RESTRICT_STORAGE_DYN_CODE_LOADING_BY_DEFAULT.get(ctx, userId);
+         }
++
++        si.defaultValueReason = DVR_DEFAULT_SETTING;
++        return ExtSettings.RESTRICT_STORAGE_DYN_CODE_LOADING_BY_DEFAULT.get(ctx, userId);
+     }
+diff --git a/frameworks/base/core/java/android/ext/settings/app/AswRestrictWebViewDynCodeLoading.java b/frameworks/base/core/java/android/ext/settings/app/AswRestrictWebViewDynCodeLoading.java
+index 8ef413d..2f38060 100644
+--- a/frameworks/base/core/java/android/ext/settings/app/AswRestrictWebViewDynCodeLoading.java
++++ b/frameworks/base/core/java/android/ext/settings/app/AswRestrictWebViewDynCodeLoading.java
+@@ -7,6 +7,2 @@ import android.content.pm.GosPackageStateFlag;
+ import android.ext.settings.ExtSettings;
+-import android.util.ArraySet;
+-
+-import com.android.internal.R;
+-import com.android.internal.os.SELinuxFlags;
+ 
+@@ -21,14 +17,2 @@ public class AswRestrictWebViewDynCodeLoading extends AppSwitch {
+ 
+-    private static volatile ArraySet<String> allowedSystemPkgs;
+-
+-    private static boolean shouldAllowByDefaultToSystemPackage(Context ctx, String pkg) {
+-        ArraySet<String> set = allowedSystemPkgs;
+-        if (set == null) {
+-            set = new ArraySet<>(ctx.getResources()
+-                .getStringArray(R.array.system_pkgs_allowed_webview_dyn_code_loading_by_default));
+-            allowedSystemPkgs = set;
+-        }
+-        return set.contains(pkg);
+-    }
+-
+     @Override
+@@ -36,13 +20,2 @@ public class AswRestrictWebViewDynCodeLoading extends AppSwitch {
+                                      GosPackageState ps, StateInfo si) {
+-        if (appInfo.isSystemApp()) {
+-            if (shouldAllowByDefaultToSystemPackage(ctx, appInfo.packageName)) {
+-                // allow manual restriction
+-                return null;
+-            } else {
+-                if (SELinuxFlags.isSystemAppSepolicyWeakeningAllowed()) {
+-                    return null;
+-                }
+-                return true;
+-            }
+-        }
+ 
+         return null;
+@@ -54,7 +27,3 @@ public class AswRestrictWebViewDynCodeLoading extends AppSwitch {
+                                            GosPackageState ps, StateInfo si) {
+-        if (appInfo.isSystemApp()) {
+-            return !shouldAllowByDefaultToSystemPackage(ctx, appInfo.packageName);
+-        } else {
+-            return ExtSettings.RESTRICT_WEBVIEW_DYN_CODE_LOADING_BY_DEFAULT.get(ctx, userId);
+-        }
++        return ExtSettings.RESTRICT_WEBVIEW_DYN_CODE_LOADING_BY_DEFAULT.get(ctx, userId);
+     }
+diff --git a/frameworks/base/core/java/android/ext/settings/app/AswUseExtendedVaSpace.java b/frameworks/base/core/java/android/ext/settings/app/AswUseExtendedVaSpace.java
+index 3f20df3..a22c8b3 100644
+--- a/frameworks/base/core/java/android/ext/settings/app/AswUseExtendedVaSpace.java
++++ b/frameworks/base/core/java/android/ext/settings/app/AswUseExtendedVaSpace.java
+@@ -24,17 +24,2 @@ public class AswUseExtendedVaSpace extends AppSwitch {
+                                      GosPackageState ps, StateInfo si) {
+-        if (AswUseHardenedMalloc.I.get(ctx, userId, appInfo, ps)) {
+-            si.immutabilityReason = IR_REQUIRED_BY_HARDENED_MALLOC;
+-            return true;
+-        }
+-
+-        String primaryAbi = appInfo.primaryCpuAbi;
+-        if (primaryAbi != null && !VMRuntime.is64BitAbi(primaryAbi)) {
+-            si.immutabilityReason = IR_NON_64_BIT_NATIVE_CODE;
+-            return false;
+-        }
+-
+-        if (ps.hasFlag(GosPackageStateFlag.ENABLE_EXPLOIT_PROTECTION_COMPAT_MODE)) {
+-            si.immutabilityReason = IR_EXPLOIT_PROTECTION_COMPAT_MODE;
+-            return false;
+-        }
+ 
+         return null;
+diff --git a/frameworks/base/core/java/android/ext/settings/app/AswUseHardenedMalloc.java b/frameworks/base/core/java/android/ext/settings/app/AswUseHardenedMalloc.java
+index d02a8d2..75cb19b 100644
+--- a/frameworks/base/core/java/android/ext/settings/app/AswUseHardenedMalloc.java
++++ b/frameworks/base/core/java/android/ext/settings/app/AswUseHardenedMalloc.java
+@@ -9,4 +9,2 @@ import com.android.server.os.nano.AppCompatProtos;
+ 
+-import dalvik.system.VMRuntime;
+-
+ /** @hide */
+@@ -24,30 +22,2 @@ public class AswUseHardenedMalloc extends AppSwitch {
+                                      GosPackageState ps, StateInfo si) {
+-        String primaryAbi = appInfo.primaryCpuAbi;
+-        if (primaryAbi == null) {
+-            si.immutabilityReason = IR_NO_NATIVE_CODE;
+-            return true;
+-        }
+-
+-        if (!VMRuntime.is64BitAbi(primaryAbi)) {
+-            // hardened_malloc is 64-bit only
+-            si.immutabilityReason = IR_NON_64_BIT_NATIVE_CODE;
+-            return false;
+-        }
+-
+-        if ((appInfo.flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+-            // turning off hardened_malloc requires exec spawning, which is always disabled for
+-            // debuggable apps
+-            si.immutabilityReason = IR_IS_DEBUGGABLE_APP;
+-            return true;
+-        }
+-
+-        if (appInfo.isSystemApp()) {
+-            si.immutabilityReason = IR_IS_SYSTEM_APP;
+-            return true;
+-        }
+-
+-        if (ps.hasFlag(GosPackageStateFlag.ENABLE_EXPLOIT_PROTECTION_COMPAT_MODE)) {
+-            si.immutabilityReason = IR_EXPLOIT_PROTECTION_COMPAT_MODE;
+-            return false;
+-        }
+ 
+         return null;
+@@ -59,3 +29,3 @@ public class AswUseHardenedMalloc extends AppSwitch {
+                                            GosPackageState ps, StateInfo si) {
+-        return true;
++        return false;
+     }
+diff --git a/frameworks/base/core/java/android/ext/settings/app/AswUseMemoryTagging.java b/frameworks/base/core/java/android/ext/settings/app/AswUseMemoryTagging.java
+index 1201529..79aa57c 100644
+--- a/frameworks/base/core/java/android/ext/settings/app/AswUseMemoryTagging.java
++++ b/frameworks/base/core/java/android/ext/settings/app/AswUseMemoryTagging.java
+@@ -27,32 +27,2 @@ public class AswUseMemoryTagging extends AppSwitch {
+                                      GosPackageState ps, StateInfo si) {
+-        final String primaryAbi = appInfo.primaryCpuAbi;
+-        if (primaryAbi == null) {
+-            si.immutabilityReason = IR_NO_NATIVE_CODE;
+-            return true;
+-        }
+-
+-        if (!VMRuntime.is64BitAbi(primaryAbi)) {
+-            si.immutabilityReason = IR_NON_64_BIT_NATIVE_CODE;
+-            return false;
+-        }
+-
+-        if (appInfo.isSystemApp()) {
+-            switch (appInfo.packageName) {
+-                case PackageId.PIXEL_CAMERA_SERVICES_NAME:
+-                    return false;
+-            }
+-            si.immutabilityReason = IR_IS_SYSTEM_APP;
+-            return true;
+-        }
+-
+-        int mm = appInfo.getMemtagMode();
+-        if (mm == ApplicationInfo.MEMTAG_ASYNC || mm == ApplicationInfo.MEMTAG_SYNC) {
+-            si.immutabilityReason = IR_OPTED_IN_VIA_MANIFEST;
+-            return true;
+-        }
+-
+-        if (ps.hasFlag(GosPackageStateFlag.ENABLE_EXPLOIT_PROTECTION_COMPAT_MODE)) {
+-            si.immutabilityReason = IR_EXPLOIT_PROTECTION_COMPAT_MODE;
+-            return false;
+-        }
+ 
+         return null;
+diff --git a/frameworks/base/core/java/com/android/internal/os/ZygoteConnection.java b/frameworks/base/core/java/com/android/internal/os/ZygoteConnection.java
+--- a/frameworks/base/core/java/com/android/internal/os/ZygoteConnection.java
++++ b/frameworks/base/core/java/com/android/internal/os/ZygoteConnection.java
+@@ -58 +58,6 @@ class ZygoteConnection {
+ 
++    // WizeOS Flexible: fully disable GrapheneOS exec-based app spawning for
++    // LSPosed / Xposed module compatibility. This keeps apps on the classic
++    // zygoteInit path and prevents the post-injection ExecInit re-exec.
++    private static final boolean WIZEOS_DISABLE_EXEC_SPAWNING_FOR_COMPAT = true;
++
+@@ -245,3 +250,4 @@ Runnable processCommand(ZygoteServer zygoteServer, boolean multipleOK) {
+ 
+-                if (parsedArgs.mInvokeWith != null || ExtSettings.EXEC_SPAWNING.get() || parsedArgs.mStartChildZygote
++                if (parsedArgs.mInvokeWith != null || WIZEOS_DISABLE_EXEC_SPAWNING_FOR_COMPAT
++                        || ExtSettings.EXEC_SPAWNING.get() || parsedArgs.mStartChildZygote
+                         || !multipleOK || peer.getUid() != Process.SYSTEM_UID
+@@ -533,6 +539,5 @@ private Runnable handleChildProc(ZygoteArguments parsedArgs,
+                 final int runtimeFlags = parsedArgs.mRuntimeFlags;
+-                boolean useExecInit =
+-                        ((runtimeFlags & Zygote.RUNTIME_FLAGS_DEPENDENT_ON_EXEC_SPAWNING) != 0
++                boolean useExecInit = !WIZEOS_DISABLE_EXEC_SPAWNING_FOR_COMPAT
++                        && ((runtimeFlags & Zygote.RUNTIME_FLAGS_DEPENDENT_ON_EXEC_SPAWNING) != 0
+                             || ExtSettings.EXEC_SPAWNING.get())
+-                        &&
+-                        (runtimeFlags & ApplicationInfo.FLAG_DEBUGGABLE) == 0;
++                        && (runtimeFlags & ApplicationInfo.FLAG_DEBUGGABLE) == 0;
+ 
+@@ -562,4 +567,4 @@ private Runnable handleChildProc(ZygoteArguments parsedArgs,
+      *
+-     * @param pid != 0; pid of child if &gt; 0 or indication of failed fork
+-     * if &lt; 0;
++     * @param pid != 0; pid of child if > 0 or indication of failed fork
++     * if < 0;
+      * @param pipeFd null-ok; pipe for communication with child.
+@@ -582,3 +587,2 @@ private void handleParentProc(int pid, FileDescriptor pipeFd) {
+                 };
+-
+                 byte[] data = new byte[BYTES_REQUIRED];
