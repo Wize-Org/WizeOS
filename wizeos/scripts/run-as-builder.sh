@@ -235,10 +235,27 @@ ensure_builder_release_ssh_keys() {
   mkdir -p "keys/${DEVICE}" "${release_keys_dir}" "${release_output_keys_dir}"
 
   [ -f keys/id_ed25519 ] || [ ! -f "keys/${DEVICE}/id_ed25519" ] || cp -a "keys/${DEVICE}/id_ed25519" keys/id_ed25519
-  if [ ! -f keys/id_ed25519 ]; then ssh-keygen -t ed25519 -N "" -C "wizeos-${DEVICE}-release-metadata" -f keys/id_ed25519; fi
+  if [ ! -f keys/id_ed25519 ]; then
+    ssh-keygen -t ed25519 -N "" -C "wizeos-${DEVICE}-release-metadata" -f keys/id_ed25519
+  fi
 
   chmod 0600 keys/id_ed25519
-  ssh-keygen -y -f keys/id_ed25519 > keys/id_ed25519.pub
+  if ssh-keygen -y -P "" -f keys/id_ed25519 > keys/id_ed25519.pub 2>/dev/null; then
+    :
+  elif [ -n "${RELEASE_SSH_KEY_PASSPHRASE:-}" ]; then
+    echo "==> Removing release SSH key passphrase for unattended build"
+    ssh-keygen -p -P "${RELEASE_SSH_KEY_PASSPHRASE}" -N "" -f keys/id_ed25519 >/dev/null
+    ssh-keygen -y -P "" -f keys/id_ed25519 > keys/id_ed25519.pub
+  elif [ "${RELEASE_SSH_KEY_AUTOREGENERATE:-0}" = "1" ]; then
+    echo "==> Existing release SSH key is encrypted; regenerating no-passphrase key"
+    rm -f keys/id_ed25519 keys/id_ed25519.pub "keys/${DEVICE}/id_ed25519" "keys/${DEVICE}/id_ed25519.pub"
+    ssh-keygen -t ed25519 -N "" -C "wizeos-${DEVICE}-release-metadata" -f keys/id_ed25519
+    ssh-keygen -y -P "" -f keys/id_ed25519 > keys/id_ed25519.pub
+  else
+    echo "ERROR: release SSH key is encrypted and would prompt for a passphrase."
+    echo "Set RELEASE_SSH_KEY_PASSPHRASE to remove the passphrase, set RELEASE_SSH_KEY_AUTOREGENERATE=1, or provide a no-passphrase key."
+    exit 1
+  fi
 
   cp -a keys/id_ed25519 "keys/${DEVICE}/id_ed25519"
   cp -a keys/id_ed25519.pub "keys/${DEVICE}/id_ed25519.pub"
@@ -249,7 +266,7 @@ ensure_builder_release_ssh_keys() {
 
   chmod 0600 keys/id_ed25519 "keys/${DEVICE}/id_ed25519" "${release_keys_dir}/id_ed25519" "${release_output_keys_dir}/id_ed25519"
   chmod 0644 keys/id_ed25519.pub "keys/${DEVICE}/id_ed25519.pub" "${release_keys_dir}/id_ed25519.pub" "${release_output_keys_dir}/id_ed25519.pub"
-  ssh-keygen -y -f keys/id_ed25519 >/dev/null
+  ssh-keygen -y -P "" -f keys/id_ed25519 >/dev/null
   echo "==> Release SSH key ready: keys/id_ed25519"
 }
 
