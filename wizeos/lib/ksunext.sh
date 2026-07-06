@@ -14,18 +14,6 @@ resolve_ksu_flavor_inputs() {
   KSU_INTEGRATION_RESOLVED="${KSU_INTEGRATION:-${KSUNEXT_INTEGRATION}}"
   KSU_SETUP_URL_RESOLVED="${KSU_SETUP_URL:-${KSUNEXT_SETUP_URL}}"
   KSU_SETUP_ARG_RESOLVED="${KSU_SETUP_ARG:-${KSUNEXT_SETUP_ARG}}"
-
-  # The normal KernelSU-Next latest tag is not guaranteed to match SUSFS.
-  # When KSUNEXT_SUSFS=1, default to pershoot's dev-susfs integration used by
-  # WildKernels' android15-6.6 SUSFS workflow. Explicit KSU_SETUP_URL or
-  # KSUNEXT_SETUP_URL overrides still win.
-  if [ "${KSUNEXT_SUSFS}" = "1" ] && [ -z "${KSU_SETUP_URL:-}" ] && [ "${KSUNEXT_SETUP_URL}" = "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" ]; then
-    KSU_SETUP_URL_RESOLVED="https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev-susfs/kernel/setup.sh"
-    if [ -z "${KSU_SETUP_ARG_RESOLVED}" ]; then
-      KSU_SETUP_ARG_RESOLVED="dev-susfs"
-    fi
-  fi
-
   KSU_KERNEL_PATCH_DIR_RESOLVED="${KSUNEXT_KERNEL_PATCH_DIR}"
   KSU_MANAGER_RELEASE_NAME="KernelSU_Next.apk"
   KSU_ZYGISK_RELEASE_NAME="Zygisk-Next.zip"
