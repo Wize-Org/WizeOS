@@ -5,18 +5,19 @@ set -euo pipefail
 # Linux kernel SUSFS payload defaults to:
 #   https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android15-6.6
 #
-# For KernelSU-Next, prefer a SUSFS-aware branch such as pershoot/dev-susfs.
-# If KernelSU-Next already contains CONFIG_KSU_SUSFS support, this script skips
-# KernelSU-side patching and only applies the Linux kernel SUSFS payload.
+# KernelSU-Next moves quickly. The KernelSU-side SUSFS fix patches are applied
+# best-effort, while the main Linux kernel SUSFS patch remains strict.
 
 SUSFS_REPO_URL="${SUSFS_REPO_URL:-https://gitlab.com/simonpunk/susfs4ksu.git}"
 SUSFS_BRANCH="${SUSFS_BRANCH:-gki-android15-6.6}"
 SUSFS_KSUNEXT_PATCH_REPO_URL="${SUSFS_KSUNEXT_PATCH_REPO_URL:-https://github.com/WildKernels/kernel_patches.git}"
 SUSFS_KSUNEXT_PATCH_DIR="${SUSFS_KSUNEXT_PATCH_DIR:-next/susfs_fix_patches/v2.2.0}"
 SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES="${SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES:-1}"
+SUSFS_KSUNEXT_PATCH_STRICT="${SUSFS_KSUNEXT_PATCH_STRICT:-0}"
 KERNEL_SOURCE_DIR="${1:-$(pwd)}"
 
 log() { printf '==> SUSFS: %s\n' "$*"; }
+warn() { printf 'WARNING: SUSFS: %s\n' "$*" >&2; }
 die() { printf 'ERROR: SUSFS: %s\n' "$*" >&2; exit 1; }
 
 [ -d "${KERNEL_SOURCE_DIR}" ] || die "kernel source dir not found: ${KERNEL_SOURCE_DIR}"
@@ -92,6 +93,25 @@ apply_or_skip() {
   git -C "${repo_dir}" apply --check "${patch_file}"
 }
 
+try_apply_or_warn() {
+  local repo_dir="$1" patch_file="$2" label="$3"
+  if git -C "${repo_dir}" apply --check "${patch_file}" >/dev/null 2>&1; then
+    log "applying ${label}"
+    git -C "${repo_dir}" apply "${patch_file}"
+    return 0
+  fi
+  if git -C "${repo_dir}" apply --reverse --check "${patch_file}" >/dev/null 2>&1; then
+    log "${label} already applied; skipping"
+    return 0
+  fi
+  if [ "${SUSFS_KSUNEXT_PATCH_STRICT}" = "1" ]; then
+    log "${label} failed git apply --check"
+    git -C "${repo_dir}" apply --check "${patch_file}"
+  fi
+  warn "${label} does not match this KernelSU-Next tree; skipping best-effort patch"
+  return 0
+}
+
 apply_ksunext_susfs_patches() {
   if ksu_has_susfs_support; then
     log "KernelSU source already has SUSFS support; skipping KernelSU-side SUSFS patches"
@@ -109,13 +129,13 @@ apply_ksunext_susfs_patches() {
 
     local p
     for p in "${ksu_patches[@]}"; do
-      apply_or_skip "${ksu_dir}" "${p}" "KernelSU-Next SUSFS patch $(basename "${p}")"
+      try_apply_or_warn "${ksu_dir}" "${p}" "KernelSU-Next SUSFS patch $(basename "${p}")"
     done
     return 0
   fi
 
   [ -f "${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ] || die "missing KernelSU SUSFS patch in upstream branch"
-  apply_or_skip "${ksu_dir}" "${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" "KernelSU SUSFS patch"
+  try_apply_or_warn "${ksu_dir}" "${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" "KernelSU SUSFS patch"
 }
 
 apply_ksunext_susfs_patches
