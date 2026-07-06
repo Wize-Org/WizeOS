@@ -4,11 +4,10 @@ set -euo pipefail
 # Applies the matching SUSFS patches for Pixel 10 / muzel GKI 6.6 kernels.
 # Linux kernel SUSFS payload defaults to:
 #   https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android15-6.6
-# KernelSU-Next SUSFS compatibility patches default to:
-#   https://github.com/WildKernels/kernel_patches/tree/main/next/susfs_fix_patches/v2.2.0
 #
-# Expected working directory: the kernel source directory selected by WizeOS
-# run-as-builder.sh, usually .../kernel_pixel_muzel/common/ack or .../common.
+# For KernelSU-Next, prefer a SUSFS-aware branch such as pershoot/dev-susfs.
+# If KernelSU-Next already contains CONFIG_KSU_SUSFS support, this script skips
+# KernelSU-side patching and only applies the Linux kernel SUSFS payload.
 
 SUSFS_REPO_URL="${SUSFS_REPO_URL:-https://gitlab.com/simonpunk/susfs4ksu.git}"
 SUSFS_BRANCH="${SUSFS_BRANCH:-gki-android15-6.6}"
@@ -74,6 +73,10 @@ ksu_dir="$(find_ksu_dir || true)"
 log "KernelSU source: ${ksu_dir}"
 log "main kernel patch: ${main_patch}"
 
+ksu_has_susfs_support() {
+  grep -Rqs 'CONFIG_KSU_SUSFS\|susfs_init\|<linux/susfs.h>' "${ksu_dir}/kernel"
+}
+
 apply_or_skip() {
   local repo_dir="$1" patch_file="$2" label="$3"
   if git -C "${repo_dir}" apply --check "${patch_file}" >/dev/null 2>&1; then
@@ -90,6 +93,11 @@ apply_or_skip() {
 }
 
 apply_ksunext_susfs_patches() {
+  if ksu_has_susfs_support; then
+    log "KernelSU source already has SUSFS support; skipping KernelSU-side SUSFS patches"
+    return 0
+  fi
+
   if [ "${SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES}" = "1" ]; then
     log "fetching KernelSU-Next SUSFS fix patches from ${SUSFS_KSUNEXT_PATCH_REPO_URL}"
     git clone --depth 1 "${SUSFS_KSUNEXT_PATCH_REPO_URL}" "${tmp}/wildkernel_patches"
