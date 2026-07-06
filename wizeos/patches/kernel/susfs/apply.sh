@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Applies the matching SUSFS patches for Pixel 10 / muzel GKI 6.6 kernels.
-# Default source matches kernels such as 6.6.x-android15-8-*:
+# Default source matches kernels such as 6.6.x-android15-*:
 #   https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android15-6.6
 #
 # Expected working directory: the kernel source directory selected by WizeOS
@@ -27,8 +27,11 @@ log "fetching ${SUSFS_REPO_URL} branch ${SUSFS_BRANCH}"
 git clone --depth 1 --branch "${SUSFS_BRANCH}" "${SUSFS_REPO_URL}" "${tmp}/susfs4ksu"
 SUSFS_DIR="${tmp}/susfs4ksu"
 
-main_patch="$(find "${SUSFS_DIR}/kernel_patches" -maxdepth 1 -type f -name '50_add_susfs_in_kernel*.patch' | sort | head -n 1)"
-[ -n "${main_patch}" ] || die "missing 50_add_susfs_in_kernel*.patch in upstream branch"
+main_patch="$(find "${SUSFS_DIR}/kernel_patches" -maxdepth 1 -type f \
+  \( -name '50_add_susfs_in_gki-*.patch' -o -name '50_add_susfs_in_kernel*.patch' \) \
+  | sort \
+  | head -n 1)"
+[ -n "${main_patch}" ] || die "missing 50_add_susfs_in_gki-*.patch or 50_add_susfs_in_kernel*.patch in upstream branch"
 [ -f "${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ] || die "missing KernelSU SUSFS patch in upstream branch"
 [ -d "${SUSFS_DIR}/kernel_patches/fs" ] || die "missing upstream fs/ payload"
 [ -d "${SUSFS_DIR}/kernel_patches/include/linux" ] || die "missing upstream include/linux payload"
@@ -65,6 +68,7 @@ find_ksu_dir() {
 ksu_dir="$(find_ksu_dir || true)"
 [ -n "${ksu_dir}" ] || die "could not find KernelSU/KernelSU-Next source dir. Set KERNELSU_DIR=/path/to/KernelSU if needed."
 log "KernelSU source: ${ksu_dir}"
+log "main kernel patch: ${main_patch}"
 
 apply_or_skip() {
   local repo_dir="$1" patch_file="$2" label="$3"
