@@ -16,6 +16,18 @@ fix_builder_ownership_before_handoff() {
   do
     [ ! -e "${path}" ] || chown -R "${BUILD_USER}:${BUILD_USER}" "${path}" 2>/dev/null || true
   done
+
+  if [ "${KERNEL_BUILD:-}" = "prebuilt" ]; then
+    local src="${KERNEL_PREBUILT_IMAGE:-/root/Image}"
+    local handoff_dir="/home/${BUILD_USER}/wizeos-prebuilt"
+    local handoff_image="${handoff_dir}/Image"
+
+    [ -f "${src}" ] || die "Prebuilt kernel Image not found or not readable by root: ${src}"
+    install -d -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0755 "${handoff_dir}"
+    install -o "${BUILD_USER}" -g "${BUILD_USER}" -m 0644 "${src}" "${handoff_image}"
+    KERNEL_PREBUILT_IMAGE_WORKDIR="${handoff_image}"
+    export KERNEL_PREBUILT_IMAGE_WORKDIR
+  fi
 }
 
 run_builder_phase() {
@@ -39,6 +51,7 @@ run_builder_phase() {
     KSUNEXT_SUSFS="${KSUNEXT_SUSFS}" SUSFS_PATCH_KERNEL="${SUSFS_PATCH_KERNEL}" SUSFS_KERNEL_PATCH_DIR="${SUSFS_KERNEL_PATCH_DIR}" SUSFS_MODULE_ZIP_WORKDIR="${SUSFS_MODULE_ZIP_WORKDIR:-}" \
     KERNEL_BUILD="${KERNEL_BUILD}" KERNEL_BASE_DIR="${KERNEL_BASE_DIR}" KERNEL_REPO_URL="${KERNEL_REPO_URL}" KERNEL_REPO_BRANCH="${KERNEL_REPO_BRANCH}" KERNEL_WORKDIR="${KERNEL_WORKDIR}" KERNEL_CODENAME="${KERNEL_CODENAME}" \
     KERNEL_BUILD_SCRIPT="${KERNEL_BUILD_SCRIPT}" KERNEL_BUILD_ARGS="${KERNEL_BUILD_ARGS}" KERNEL_OS_PREBUILT_DIR="${KERNEL_OS_PREBUILT_DIR}" KERNEL_DIST_DIR="${KERNEL_DIST_DIR}" KERNEL_REPO_MANIFEST_FILE="${KERNEL_REPO_MANIFEST_FILE}" KERNEL_CLEAN="${KERNEL_CLEAN}" \
+    KERNEL_PREBUILT_IMAGE="${KERNEL_PREBUILT_IMAGE_WORKDIR:-${KERNEL_PREBUILT_IMAGE:-/root/Image}}" KERNEL_PREBUILT_IMAGE_NAME="${KERNEL_PREBUILT_IMAGE_NAME:-Image}" \
     SIGNING_KEY_PASSPHRASE_FILE="${SIGNING_KEY_PASSPHRASE_FILE:-}" BUILDER_ACTION="${builder_action}" \
     bash "${runner}"
 }

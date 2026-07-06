@@ -83,7 +83,7 @@ apply_lsposed_patch_dir() { apply_patch_dir "LSPOSED_COMPAT" "$1"; }
 
 kernel_should_build() {
   case "${KERNEL_BUILD}" in
-    1) return 0 ;;
+    1|prebuilt) return 0 ;;
     0) return 1 ;;
     auto) [ "${ROOT}" = "ksunext" ] && return 0 || return 1 ;;
   esac
@@ -203,9 +203,35 @@ kernel_apply_root_patches() {
   fi
 }
 
+install_prebuilt_kernel_image() {
+  local src="${KERNEL_PREBUILT_IMAGE:-/root/Image}"
+  local image_name="${KERNEL_PREBUILT_IMAGE_NAME:-Image}"
+  local dest_dir="${WORKDIR}/${KERNEL_OS_PREBUILT_DIR}"
+  local dest="${dest_dir}/${image_name}"
+
+  [ -f "${src}" ] || { echo "ERROR: Prebuilt kernel Image not found: ${src}"; exit 1; }
+  [ -d "${WORKDIR}" ] || { echo "ERROR: OS workdir not found: ${WORKDIR}. Run ACTION=sync first."; exit 1; }
+
+  echo "==> Installing prebuilt kernel Image"
+  echo "    From: ${src}"
+  echo "    To  : ${dest}"
+  mkdir -p "${dest_dir}"
+  cp -a "${src}" "${dest}"
+  chmod 0644 "${dest}"
+
+  if command -v strings >/dev/null 2>&1; then
+    strings "${dest}" | grep -m1 '^Linux version ' || true
+  fi
+}
+
 kernel_build_and_copy() {
   if ! kernel_should_build; then
     echo "==> Kernel build disabled (${KERNEL_BUILD})"
+    return 0
+  fi
+
+  if [ "${KERNEL_BUILD}" = "prebuilt" ]; then
+    install_prebuilt_kernel_image
     return 0
   fi
 

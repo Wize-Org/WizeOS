@@ -58,7 +58,7 @@ validate_config() {
   case "${ROOT}" in none|magisk|ksunext) ;; *) die "ROOT must be none, magisk, or ksunext. Current value: ${ROOT}" ;; esac
   case "${KSU_FLAVOR}" in ksunext) ;; *) die "KSU_FLAVOR=${KSU_FLAVOR} is no longer supported. Use ROOT=ksunext with KSU_FLAVOR=ksunext." ;; esac
   case "${KSU_INTEGRATION}" in setup|patch) ;; *) die "KSU_INTEGRATION must be setup or patch. Current value: ${KSU_INTEGRATION}" ;; esac
-  case "${KERNEL_BUILD}" in auto|0|1) ;; *) die "KERNEL_BUILD must be auto, 0, or 1. Current value: ${KERNEL_BUILD}" ;; esac
+  case "${KERNEL_BUILD}" in auto|0|1|prebuilt) ;; *) die "KERNEL_BUILD must be auto, 0, 1, or prebuilt. Current value: ${KERNEL_BUILD}" ;; esac
 
   [ "${ROOT}" != "magisk" ] || [ "${SIGNED}" = "1" ] || die "ROOT=magisk requires SIGNED=1"
   [ "${ROOT}" != "magisk" ] || [ -n "${MAGISK_APK}" ] || die "ROOT=magisk requires MAGISK_APK=/path/to/Magisk.apk"
@@ -99,6 +99,10 @@ print_config() {
     echo "    Kernel workdir      : ${KERNEL_WORKDIR}"
     echo "    Kernel codename     : ${KERNEL_CODENAME}"
     echo "    Kernel prebuilts    : ${KERNEL_OS_PREBUILT_DIR}"
+    if [ "${KERNEL_BUILD}" = "prebuilt" ]; then
+      echo "    Kernel Image input  : ${KERNEL_PREBUILT_IMAGE:-/root/Image}"
+      echo "    Kernel Image name   : ${KERNEL_PREBUILT_IMAGE_NAME:-Image}"
+    fi
   fi
   echo "    Patch dir           : ${PATCHES_DIR}"
   echo "    Profile patch dir   : ${WIZEOS_PROFILE_PATCHES_DIR}"
