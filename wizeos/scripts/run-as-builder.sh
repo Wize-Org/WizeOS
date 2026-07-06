@@ -143,6 +143,21 @@ run_ksu_setup_script() {
   fi
 }
 
+apply_susfs_kernel_patches() {
+  local kernel_source_dir="$1"
+  local susfs_apply_script="${SUSFS_KERNEL_PATCH_DIR}/apply.sh"
+
+  if [ -x "${susfs_apply_script}" ]; then
+    echo "==> SUSFS kernel patches: running ${susfs_apply_script}"
+    "${susfs_apply_script}" "${kernel_source_dir}"
+  elif [ -f "${susfs_apply_script}" ]; then
+    echo "==> SUSFS kernel patches: running ${susfs_apply_script} with bash"
+    bash "${susfs_apply_script}" "${kernel_source_dir}"
+  else
+    apply_patch_dir_required_in_repo "SUSFS kernel patches" "${SUSFS_KERNEL_PATCH_DIR}" "${kernel_source_dir}"
+  fi
+}
+
 kernel_apply_root_patches() {
   cd "${KERNEL_WORKDIR}"
   git reset --hard HEAD
@@ -174,7 +189,7 @@ kernel_apply_root_patches() {
   fi
 
   if [ "${ROOT}" = "ksunext" ] && [ "${SUSFS_PATCH_KERNEL}" = "1" ]; then
-    apply_patch_dir_required_in_repo "SUSFS kernel patches" "${SUSFS_KERNEL_PATCH_DIR}" "${kernel_source_dir}"
+    apply_susfs_kernel_patches "${kernel_source_dir}"
   else
     echo "==> Skipping SUSFS kernel patches"
   fi
