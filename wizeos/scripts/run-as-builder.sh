@@ -29,16 +29,27 @@ collect_patch_files() {
   find "${patch_dir}" -type f \( -name '*.patch' -o -name '*.diff' \) | sort
 }
 
+apply_single_patch_in_repo() {
+  local label="$1" repo_dir="$2" patch_file="$3"
+  cd "${repo_dir}"
+  if git apply --check "${patch_file}" >/dev/null 2>&1; then
+    echo "==> ${label}: applying ${patch_file}"
+    git apply "${patch_file}"
+  elif git apply --reverse --check "${patch_file}" >/dev/null 2>&1; then
+    echo "==> ${label}: already applied ${patch_file}; skipping"
+  else
+    echo "ERROR: ${label}: patch does not apply cleanly and is not already applied: ${patch_file}" >&2
+    git apply --check "${patch_file}"
+  fi
+}
+
 apply_patch_dir() {
   local label="$1" patch_dir="$2"
   [ -d "${patch_dir}" ] || { echo "==> ${label}: no patch dir at ${patch_dir}, skipping"; return 0; }
   mapfile -t patches < <(collect_patch_files "${patch_dir}")
   [ "${#patches[@]}" -gt 0 ] || { echo "==> ${label}: no .patch or .diff files found"; return 0; }
-  cd "$WORKDIR"
   for p in "${patches[@]}"; do
-    echo "==> ${label}: applying $p"
-    git apply --check "$p"
-    git apply "$p"
+    apply_single_patch_in_repo "${label}" "${WORKDIR}" "${p}"
   done
 }
 
@@ -47,11 +58,8 @@ apply_patch_dir_required_in_repo() {
   [ -d "${patch_dir}" ] || { echo "ERROR: ${label}: patch dir missing: ${patch_dir}"; exit 1; }
   mapfile -t patches < <(collect_patch_files "${patch_dir}")
   [ "${#patches[@]}" -gt 0 ] || { echo "ERROR: ${label}: no .patch or .diff files found in ${patch_dir}"; exit 1; }
-  cd "${repo_dir}"
   for p in "${patches[@]}"; do
-    echo "==> ${label}: applying $p"
-    git apply --check "$p"
-    git apply "$p"
+    apply_single_patch_in_repo "${label}" "${repo_dir}" "${p}"
   done
 }
 
