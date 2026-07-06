@@ -2,14 +2,19 @@
 set -euo pipefail
 
 # Applies the matching SUSFS patches for Pixel 10 / muzel GKI 6.6 kernels.
-# Default source matches kernels such as 6.6.x-android15-*:
+# Linux kernel SUSFS payload defaults to:
 #   https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android15-6.6
+# KernelSU-Next SUSFS compatibility patches default to:
+#   https://github.com/WildKernels/kernel_patches/tree/main/next/susfs_fix_patches/v2.2.0
 #
 # Expected working directory: the kernel source directory selected by WizeOS
 # run-as-builder.sh, usually .../kernel_pixel_muzel/common/ack or .../common.
 
 SUSFS_REPO_URL="${SUSFS_REPO_URL:-https://gitlab.com/simonpunk/susfs4ksu.git}"
 SUSFS_BRANCH="${SUSFS_BRANCH:-gki-android15-6.6}"
+SUSFS_KSUNEXT_PATCH_REPO_URL="${SUSFS_KSUNEXT_PATCH_REPO_URL:-https://github.com/WildKernels/kernel_patches.git}"
+SUSFS_KSUNEXT_PATCH_DIR="${SUSFS_KSUNEXT_PATCH_DIR:-next/susfs_fix_patches/v2.2.0}"
+SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES="${SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES:-1}"
 KERNEL_SOURCE_DIR="${1:-$(pwd)}"
 
 log() { printf '==> SUSFS: %s\n' "$*"; }
@@ -32,7 +37,6 @@ main_patch="$(find "${SUSFS_DIR}/kernel_patches" -maxdepth 1 -type f \
   | sort \
   | head -n 1)"
 [ -n "${main_patch}" ] || die "missing 50_add_susfs_in_gki-*.patch or 50_add_susfs_in_kernel*.patch in upstream branch"
-[ -f "${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ] || die "missing KernelSU SUSFS patch in upstream branch"
 [ -d "${SUSFS_DIR}/kernel_patches/fs" ] || die "missing upstream fs/ payload"
 [ -d "${SUSFS_DIR}/kernel_patches/include/linux" ] || die "missing upstream include/linux payload"
 
@@ -85,7 +89,28 @@ apply_or_skip() {
   git -C "${repo_dir}" apply --check "${patch_file}"
 }
 
-apply_or_skip "${ksu_dir}" "${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" "KernelSU SUSFS patch"
+apply_ksunext_susfs_patches() {
+  if [ "${SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES}" = "1" ]; then
+    log "fetching KernelSU-Next SUSFS fix patches from ${SUSFS_KSUNEXT_PATCH_REPO_URL}"
+    git clone --depth 1 "${SUSFS_KSUNEXT_PATCH_REPO_URL}" "${tmp}/wildkernel_patches"
+    local patch_root="${tmp}/wildkernel_patches/${SUSFS_KSUNEXT_PATCH_DIR}"
+    [ -d "${patch_root}" ] || die "missing KernelSU-Next SUSFS patch dir: ${SUSFS_KSUNEXT_PATCH_DIR}"
+
+    mapfile -t ksu_patches < <(find "${patch_root}" -type f \( -name '*.patch' -o -name '*.diff' \) | sort)
+    [ "${#ksu_patches[@]}" -gt 0 ] || die "no .patch or .diff files found in ${SUSFS_KSUNEXT_PATCH_DIR}"
+
+    local p
+    for p in "${ksu_patches[@]}"; do
+      apply_or_skip "${ksu_dir}" "${p}" "KernelSU-Next SUSFS patch $(basename "${p}")"
+    done
+    return 0
+  fi
+
+  [ -f "${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ] || die "missing KernelSU SUSFS patch in upstream branch"
+  apply_or_skip "${ksu_dir}" "${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" "KernelSU SUSFS patch"
+}
+
+apply_ksunext_susfs_patches
 
 log "copying upstream SUSFS fs/ and include/linux/ payload"
 rsync -a "${SUSFS_DIR}/kernel_patches/fs/" "${KERNEL_SOURCE_DIR}/fs/"
