@@ -100,7 +100,7 @@ index 3cccc78..7ca7b67 100644
  #include <linux/thread_info.h>
  #include <linux/seccomp.h>
  #include <linux/printk.h>
-@@ -14,16 +15,28 @@
+@@ -12,17 +13,29 @@
  #include <linux/uaccess.h>
  #include <linux/uidgid.h>
  
@@ -131,7 +131,7 @@ index 3cccc78..7ca7b67 100644
  	// we rely on the fact that zygote always call setresuid(3) with same uids
  
  	pr_info("handle_setresuid from %d to %d\n", old_uid, new_uid);
-@@ -54,6 +67,18 @@ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
+@@ -53,5 +65,17 @@ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid, uid_t suid)
  	// Handle kernel umount
  	ksu_handle_umount(old_uid, new_uid);
  
@@ -146,7 +146,6 @@ index 3cccc78..7ca7b67 100644
 +
  	return 0;
  }
- 
 diff --git a/kernel/hook/setuid_hook.h b/kernel/hook/setuid_hook.h
 index 3a3dfea..8fd598a 100644
 --- a/kernel/hook/setuid_hook.h
@@ -338,4 +337,4 @@ index 1a39732..8e9e52b 100644
 +
  	/* Check if this is a request to install KSU fd */
  	if (magic1 == KSU_INSTALL_MAGIC1 && magic2 == KSU_INSTALL_MAGIC2) {
- 		struct ksu_install_fd_tw;
+ 		struct ksu_install_fd_tw *tw;
