@@ -215,6 +215,32 @@ if 'current_uid().val' in s and '#include <linux/cred.h>' not in s:
 PY
 }
 
+fix_susfs_selinux_static_hooks() {
+  # The GrapheneOS common SUSFS port contains older built-in SELinux hide hooks
+  # in selinuxfs.c/hooks.c. KernelSU-Next v3b18216f already provides SELinux
+  # hide by runtime patching in kernel/feature/selinux_hide.c, and its helper
+  # symbols are intentionally static. Leaving the older built-in blocks enabled
+  # creates undefined references such as initialize_fake_status and
+  # security_sid_to_context_with_policy at vmlinux link time.
+  local f
+  for f in \
+    "${KERNEL_SOURCE_DIR}/security/selinux/selinuxfs.c" \
+    "${KERNEL_SOURCE_DIR}/security/selinux/hooks.c"; do
+    [ -f "${f}" ] || continue
+    python3 - "${f}" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+s = p.read_text()
+marker = 'WIZEOS_DISABLE_BUILTIN_KSU_SUSFS_SELINUX_HOOKS'
+if marker in s:
+    raise SystemExit(0)
+s = s.replace('#ifdef CONFIG_KSU_SUSFS', f'#if 0 /* {marker}: KernelSU-Next handles SELinux hide */')
+p.write_text(s)
+PY
+  done
+}
+
 apply_ksunext_susfs_patches() {
   if ksu_has_susfs_support; then
     log "KernelSU source already has SUSFS support; skipping KernelSU-side SUSFS patches"
@@ -248,6 +274,7 @@ fi
 
 apply_or_skip "${KERNEL_SOURCE_DIR}" "${main_patch}" "kernel SUSFS patch"
 fix_susfs_kernel_headers
+fix_susfs_selinux_static_hooks
 
 # GrapheneOS / Kleaf BUILD.bazel references these ABI export files, so keep
 # them by default. Set SUSFS_REMOVE_PROTECTED_EXPORTS=1 only for kernels whose
