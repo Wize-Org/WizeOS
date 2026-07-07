@@ -15,6 +15,7 @@ SUSFS_KSUNEXT_PATCH_DIR="${SUSFS_KSUNEXT_PATCH_DIR:-next/susfs_fix_patches/v2.2.
 SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES="${SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES:-1}"
 SUSFS_KSUNEXT_PATCH_STRICT="${SUSFS_KSUNEXT_PATCH_STRICT:-0}"
 KERNEL_SOURCE_DIR="${1:-$(pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log() { printf '==> SUSFS: %s\n' "$*"; }
 warn() { printf 'WARNING: SUSFS: %s\n' "$*" >&2; }
@@ -39,6 +40,19 @@ main_patch="$(find "${SUSFS_DIR}/kernel_patches" -maxdepth 1 -type f \
 [ -n "${main_patch}" ] || die "missing 50_add_susfs_in_gki-*.patch or 50_add_susfs_in_kernel*.patch in upstream branch"
 [ -d "${SUSFS_DIR}/kernel_patches/fs" ] || die "missing upstream fs/ payload"
 [ -d "${SUSFS_DIR}/kernel_patches/include/linux" ] || die "missing upstream include/linux payload"
+
+# Prefer the WizeOS-local GrapheneOS port when present. This patch is a full
+# Git patch for GrapheneOS common 6.6 and already contains the SUSFS payload
+# files, so the upstream fs/ and include/linux/ payload must not be copied first.
+LOCAL_GRAPHENEOS_PATCH="${SUSFS_LOCAL_KERNEL_PATCH:-${SCRIPT_DIR}/50_add_susfs_in_grapheneos_common-6.6.patch}"
+SUSFS_LOCAL_FULL_PATCH=0
+if [ -f "${LOCAL_GRAPHENEOS_PATCH}" ]; then
+  main_patch="${LOCAL_GRAPHENEOS_PATCH}"
+  SUSFS_LOCAL_FULL_PATCH=1
+  log "using local GrapheneOS common 6.6 kernel patch: ${main_patch}"
+else
+  log "using upstream GKI kernel patch: ${main_patch}"
+fi
 
 find_ksu_dir() {
   local d
@@ -140,9 +154,13 @@ apply_ksunext_susfs_patches() {
 
 apply_ksunext_susfs_patches
 
-log "copying upstream SUSFS fs/ and include/linux/ payload"
-rsync -a "${SUSFS_DIR}/kernel_patches/fs/" "${KERNEL_SOURCE_DIR}/fs/"
-rsync -a "${SUSFS_DIR}/kernel_patches/include/linux/" "${KERNEL_SOURCE_DIR}/include/linux/"
+if [ "${SUSFS_LOCAL_FULL_PATCH}" = "1" ]; then
+  log "local GrapheneOS patch includes SUSFS payload; skipping upstream payload copy"
+else
+  log "copying upstream SUSFS fs/ and include/linux/ payload"
+  rsync -a "${SUSFS_DIR}/kernel_patches/fs/" "${KERNEL_SOURCE_DIR}/fs/"
+  rsync -a "${SUSFS_DIR}/kernel_patches/include/linux/" "${KERNEL_SOURCE_DIR}/include/linux/"
+fi
 
 apply_or_skip "${KERNEL_SOURCE_DIR}" "${main_patch}" "kernel SUSFS patch"
 
