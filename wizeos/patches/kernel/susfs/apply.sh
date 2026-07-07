@@ -5,10 +5,11 @@ set -euo pipefail
 # Linux kernel SUSFS payload defaults to:
 #   https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android15-6.6
 #
-# KernelSU-Next moves quickly. Prefer the complete upstream KernelSU-side
-# SUSFS patch when it matches the checked-out KernelSU tree. The WildKernels
-# small fix patches are disabled by default because they can partially patch
-# newer KernelSU-Next trees and then fail later at compile time.
+# KernelSU-Next moves quickly. Prefer WizeOS-local KernelSU-Next SUSFS ports
+# when present, then the complete upstream KernelSU-side SUSFS patch when it
+# matches the checked-out KernelSU tree. The WildKernels small fix patches are
+# disabled by default because they can partially patch newer KernelSU-Next trees
+# and then fail later at compile time.
 
 SUSFS_REPO_URL="${SUSFS_REPO_URL:-https://gitlab.com/simonpunk/susfs4ksu.git}"
 SUSFS_BRANCH="${SUSFS_BRANCH:-gki-android15-6.6}"
@@ -129,6 +130,25 @@ try_apply_or_warn() {
   return 1
 }
 
+apply_local_ksunext_susfs_patch() {
+  local p="${SUSFS_LOCAL_KSUNEXT_PATCH:-${SCRIPT_DIR}/10_enable_susfs_for_ksunext_3b18216f.patch}"
+  [ -f "${p}" ] || return 1
+
+  if git -C "${ksu_dir}" apply --check "${p}" >/dev/null 2>&1; then
+    log "applying local KernelSU-Next SUSFS port $(basename "${p}")"
+    git -C "${ksu_dir}" apply "${p}"
+    return 0
+  fi
+
+  if git -C "${ksu_dir}" apply --reverse --check "${p}" >/dev/null 2>&1; then
+    log "local KernelSU-Next SUSFS port already applied; skipping"
+    return 0
+  fi
+
+  warn "local KernelSU-Next SUSFS port does not match this KernelSU tree"
+  return 1
+}
+
 apply_upstream_ksu_susfs_patch() {
   local p="${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
   [ -f "${p}" ] || return 1
@@ -173,6 +193,10 @@ apply_wildkernels_ksunext_susfs_patches() {
 apply_ksunext_susfs_patches() {
   if ksu_has_susfs_support; then
     log "KernelSU source already has SUSFS support; skipping KernelSU-side SUSFS patches"
+    return 0
+  fi
+
+  if apply_local_ksunext_susfs_patch; then
     return 0
   fi
 
