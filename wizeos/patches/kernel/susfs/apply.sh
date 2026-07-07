@@ -241,6 +241,57 @@ PY
   done
 }
 
+fix_susfs_weak_ksu_symbols() {
+  # KernelSU-side helpers are supplied by KernelSU-Next when its SUSFS adapter
+  # is compiled in. Keep weak fallbacks in fs/susfs.c so core kernel patches can
+  # link even when a helper is not exported by the exact KernelSU-Next tag.
+  local f="${KERNEL_SOURCE_DIR}/fs/susfs.c"
+  [ -f "${f}" ] || return 0
+  python3 - "${f}" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+s = p.read_text()
+marker = 'WIZEOS_WEAK_KSU_SUSFS_SYMBOLS'
+if marker in s:
+    raise SystemExit(0)
+block = r'''
+
+/* WIZEOS_WEAK_KSU_SUSFS_SYMBOLS: fallback glue for KernelSU-Next tag drift. */
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/cred.h>
+#include <linux/types.h>
+
+u32 susfs_ksu_sid __weak __read_mostly;
+u32 susfs_init_sid __weak __read_mostly;
+u32 susfs_zygote_sid __weak __read_mostly;
+u32 susfs_priv_app_sid __weak __read_mostly;
+
+bool __weak susfs_is_sid_equal(const struct cred *cred, u32 sid2)
+{
+	return false;
+}
+
+u32 __weak susfs_get_current_sid(void)
+{
+	return 0;
+}
+
+bool __weak susfs_is_current_zygote_domain(void)
+{
+	return false;
+}
+
+bool __weak susfs_is_current_ksu_domain(void)
+{
+	return false;
+}
+#endif
+'''
+p.write_text(s + block)
+PY
+}
+
 apply_ksunext_susfs_patches() {
   if ksu_has_susfs_support; then
     log "KernelSU source already has SUSFS support; skipping KernelSU-side SUSFS patches"
@@ -275,6 +326,7 @@ fi
 apply_or_skip "${KERNEL_SOURCE_DIR}" "${main_patch}" "kernel SUSFS patch"
 fix_susfs_kernel_headers
 fix_susfs_selinux_static_hooks
+fix_susfs_weak_ksu_symbols
 
 # GrapheneOS / Kleaf BUILD.bazel references these ABI export files, so keep
 # them by default. Set SUSFS_REMOVE_PROTECTED_EXPORTS=1 only for kernels whose
