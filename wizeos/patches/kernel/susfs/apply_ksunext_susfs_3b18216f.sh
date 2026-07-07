@@ -111,6 +111,17 @@ endmenu
     s = s[:pos] + block + s[pos:]
     kconfig.write_text(s)
 
+# kernel/Kbuild
+# GrapheneOS/Kleaf builds KernelSU-Next with Clang -Werror. Including some
+# kernel headers from this tree can trigger known _SIG_SET_BINOP array-bounds
+# diagnostics even when the code path is not used for _NSIG_WORDS == 1.
+# Keep the warning from becoming fatal for KernelSU objects.
+kbuild = Path("kernel/Kbuild")
+s = kbuild.read_text()
+if "-Wno-error=array-bounds" not in s:
+    s = s.rstrip() + "\nccflags-y += -Wno-array-bounds -Wno-error=array-bounds\n"
+    kbuild.write_text(s)
+
 # kernel/core/init.c
 insert_after(
     "kernel/core/init.c",
