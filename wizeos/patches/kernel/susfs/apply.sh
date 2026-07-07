@@ -14,6 +14,7 @@ SUSFS_KSUNEXT_PATCH_REPO_URL="${SUSFS_KSUNEXT_PATCH_REPO_URL:-https://github.com
 SUSFS_KSUNEXT_PATCH_DIR="${SUSFS_KSUNEXT_PATCH_DIR:-next/susfs_fix_patches/v2.2.0}"
 SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES="${SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES:-1}"
 SUSFS_KSUNEXT_PATCH_STRICT="${SUSFS_KSUNEXT_PATCH_STRICT:-0}"
+SUSFS_REMOVE_PROTECTED_EXPORTS="${SUSFS_REMOVE_PROTECTED_EXPORTS:-0}"
 KERNEL_SOURCE_DIR="${1:-$(pwd)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -164,10 +165,16 @@ fi
 
 apply_or_skip "${KERNEL_SOURCE_DIR}" "${main_patch}" "kernel SUSFS patch"
 
-# The upstream SUSFS notes recommend removing these for Android 14+ GKI builds
-# when present, otherwise some modules can fail against protected ABI exports.
-rm -f \
-  "${KERNEL_SOURCE_DIR}/android/abi_gki_protected_exports_aarch64" \
-  "${KERNEL_SOURCE_DIR}/android/abi_gki_protected_exports_x86_64"
+# GrapheneOS / Kleaf BUILD.bazel references these ABI export files, so keep
+# them by default. Set SUSFS_REMOVE_PROTECTED_EXPORTS=1 only for kernels whose
+# build rules do not require android/abi_gki_protected_exports_* as inputs.
+if [ "${SUSFS_REMOVE_PROTECTED_EXPORTS}" = "1" ]; then
+  log "removing protected ABI export lists because SUSFS_REMOVE_PROTECTED_EXPORTS=1"
+  rm -f \
+    "${KERNEL_SOURCE_DIR}/android/abi_gki_protected_exports_aarch64" \
+    "${KERNEL_SOURCE_DIR}/android/abi_gki_protected_exports_x86_64"
+else
+  log "keeping protected ABI export lists required by GrapheneOS/Kleaf"
+fi
 
 log "done. Verify CONFIG_KSU=y and CONFIG_KSU_SUSFS=y before building."
