@@ -197,6 +197,24 @@ apply_wildkernels_ksunext_susfs_patches() {
   return 0
 }
 
+fix_susfs_kernel_headers() {
+  local def="${KERNEL_SOURCE_DIR}/include/linux/susfs_def.h"
+  [ -f "${def}" ] || return 0
+  python3 - "${def}" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+s = p.read_text()
+if 'current_uid().val' in s and '#include <linux/cred.h>' not in s:
+    marker = '#define __SUSFS_DEF_H__\n'
+    if marker in s:
+        s = s.replace(marker, marker + '\n#include <linux/cred.h>\n', 1)
+    else:
+        s = '#include <linux/cred.h>\n' + s
+    p.write_text(s)
+PY
+}
+
 apply_ksunext_susfs_patches() {
   if ksu_has_susfs_support; then
     log "KernelSU source already has SUSFS support; skipping KernelSU-side SUSFS patches"
@@ -229,6 +247,7 @@ else
 fi
 
 apply_or_skip "${KERNEL_SOURCE_DIR}" "${main_patch}" "kernel SUSFS patch"
+fix_susfs_kernel_headers
 
 # GrapheneOS / Kleaf BUILD.bazel references these ABI export files, so keep
 # them by default. Set SUSFS_REMOVE_PROTECTED_EXPORTS=1 only for kernels whose
