@@ -131,6 +131,13 @@ try_apply_or_warn() {
 }
 
 apply_local_ksunext_susfs_patch() {
+  local s="${SUSFS_LOCAL_KSUNEXT_SCRIPT:-${SCRIPT_DIR}/apply_ksunext_susfs_3b18216f.sh}"
+  if [ -f "${s}" ]; then
+    log "applying scripted local KernelSU-Next SUSFS port $(basename "${s}")"
+    bash "${s}" "${ksu_dir}"
+    return 0
+  fi
+
   local p="${SUSFS_LOCAL_KSUNEXT_PATCH:-${SCRIPT_DIR}/10_enable_susfs_for_ksunext_3b18216f.patch}"
   [ -f "${p}" ] || return 1
 
