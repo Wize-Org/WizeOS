@@ -140,7 +140,7 @@ insert_after(
 insert_after(
     "kernel/hook/setuid_hook.c",
     "#include <linux/task_work.h>\n",
-    "#include <linux/susfs_def.h>\n#include <linux/workqueue.h>\n",
+    "#include <linux/cred.h>\n#include <linux/susfs_def.h>\n#include <linux/workqueue.h>\n",
     "<linux/susfs_def.h>",
 )
 insert_after(
@@ -165,11 +165,6 @@ static inline void ksu_handle_extra_susfs_work(void)
 ''',
     "ksu_handle_extra_susfs_work",
 )
-replace_once(
-    "kernel/hook/setuid_hook.c",
-    "int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)\n{\n",
-    "int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid, uid_t suid)\n{\n\t(void)suid;\n",
-)
 insert_after(
     "kernel/hook/setuid_hook.c",
     "\tksu_handle_umount(old_uid, new_uid);\n",
@@ -185,20 +180,6 @@ insert_after(
 #endif
 ''',
     "susfs_set_current_proc_umounted",
-)
-
-# kernel/hook/setuid_hook.h
-replace_once(
-    "kernel/hook/setuid_hook.h",
-    "int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid);",
-    "int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid, uid_t suid);",
-)
-
-# kernel/hook/syscall_event_bridge.c
-replace_once(
-    "kernel/hook/syscall_event_bridge.c",
-    "\tksu_handle_setresuid(old_uid, current_uid().val);",
-    "\tksu_handle_setresuid(old_uid, current_uid().val, current_suid().val);",
 )
 
 # kernel/selinux/selinux.c
