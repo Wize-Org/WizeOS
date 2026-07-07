@@ -5,8 +5,9 @@ set -euo pipefail
 # Linux kernel SUSFS payload defaults to:
 #   https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android15-6.6
 #
-# KernelSU-Next moves quickly. The KernelSU-side SUSFS fix patches are applied
-# best-effort, while the main Linux kernel SUSFS patch remains strict.
+# KernelSU-Next moves quickly. Prefer the complete upstream KernelSU-side
+# SUSFS patch when it matches the checked-out KernelSU tree. The WildKernels
+# small fix patches are kept only as a fallback.
 
 SUSFS_REPO_URL="${SUSFS_REPO_URL:-https://gitlab.com/simonpunk/susfs4ksu.git}"
 SUSFS_BRANCH="${SUSFS_BRANCH:-gki-android15-6.6}"
@@ -124,6 +125,47 @@ try_apply_or_warn() {
     git -C "${repo_dir}" apply --check "${patch_file}"
   fi
   warn "${label} does not match this KernelSU-Next tree; skipping best-effort patch"
+  return 1
+}
+
+apply_upstream_ksu_susfs_patch() {
+  local p="${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
+  [ -f "${p}" ] || return 1
+
+  if git -C "${ksu_dir}" apply --check "${p}" >/dev/null 2>&1; then
+    log "applying upstream KernelSU-side SUSFS patch $(basename "${p}")"
+    git -C "${ksu_dir}" apply "${p}"
+    return 0
+  fi
+
+  if git -C "${ksu_dir}" apply --reverse --check "${p}" >/dev/null 2>&1; then
+    log "upstream KernelSU-side SUSFS patch already applied; skipping"
+    return 0
+  fi
+
+  warn "upstream KernelSU-side SUSFS patch does not match this KernelSU tree"
+  return 1
+}
+
+apply_wildkernels_ksunext_susfs_patches() {
+  [ "${SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES}" = "1" ] || return 1
+
+  log "fetching KernelSU-Next SUSFS fallback patches from ${SUSFS_KSUNEXT_PATCH_REPO_URL}"
+  git clone --depth 1 "${SUSFS_KSUNEXT_PATCH_REPO_URL}" "${tmp}/wildkernel_patches"
+  local patch_root="${tmp}/wildkernel_patches/${SUSFS_KSUNEXT_PATCH_DIR}"
+  [ -d "${patch_root}" ] || die "missing KernelSU-Next SUSFS patch dir: ${SUSFS_KSUNEXT_PATCH_DIR}"
+
+  mapfile -t ksu_patches < <(find "${patch_root}" -type f \( -name '*.patch' -o -name '*.diff' \) | sort)
+  [ "${#ksu_patches[@]}" -gt 0 ] || die "no .patch or .diff files found in ${SUSFS_KSUNEXT_PATCH_DIR}"
+
+  local p applied=0
+  for p in "${ksu_patches[@]}"; do
+    if try_apply_or_warn "${ksu_dir}" "${p}" "KernelSU-Next SUSFS fallback patch $(basename "${p}")"; then
+      applied=1
+    fi
+  done
+
+  [ "${applied}" = "1" ] || return 1
   return 0
 }
 
@@ -133,24 +175,15 @@ apply_ksunext_susfs_patches() {
     return 0
   fi
 
-  if [ "${SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES}" = "1" ]; then
-    log "fetching KernelSU-Next SUSFS fix patches from ${SUSFS_KSUNEXT_PATCH_REPO_URL}"
-    git clone --depth 1 "${SUSFS_KSUNEXT_PATCH_REPO_URL}" "${tmp}/wildkernel_patches"
-    local patch_root="${tmp}/wildkernel_patches/${SUSFS_KSUNEXT_PATCH_DIR}"
-    [ -d "${patch_root}" ] || die "missing KernelSU-Next SUSFS patch dir: ${SUSFS_KSUNEXT_PATCH_DIR}"
-
-    mapfile -t ksu_patches < <(find "${patch_root}" -type f \( -name '*.patch' -o -name '*.diff' \) | sort)
-    [ "${#ksu_patches[@]}" -gt 0 ] || die "no .patch or .diff files found in ${SUSFS_KSUNEXT_PATCH_DIR}"
-
-    local p
-    for p in "${ksu_patches[@]}"; do
-      try_apply_or_warn "${ksu_dir}" "${p}" "KernelSU-Next SUSFS patch $(basename "${p}")"
-    done
+  if apply_upstream_ksu_susfs_patch; then
     return 0
   fi
 
-  [ -f "${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ] || die "missing KernelSU SUSFS patch in upstream branch"
-  try_apply_or_warn "${ksu_dir}" "${SUSFS_DIR}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" "KernelSU SUSFS patch"
+  if apply_wildkernels_ksunext_susfs_patches; then
+    return 0
+  fi
+
+  die "could not apply any KernelSU-side SUSFS patch"
 }
 
 apply_ksunext_susfs_patches
