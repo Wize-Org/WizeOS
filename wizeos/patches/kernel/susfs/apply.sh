@@ -7,13 +7,14 @@ set -euo pipefail
 #
 # KernelSU-Next moves quickly. Prefer the complete upstream KernelSU-side
 # SUSFS patch when it matches the checked-out KernelSU tree. The WildKernels
-# small fix patches are kept only as a fallback.
+# small fix patches are disabled by default because they can partially patch
+# newer KernelSU-Next trees and then fail later at compile time.
 
 SUSFS_REPO_URL="${SUSFS_REPO_URL:-https://gitlab.com/simonpunk/susfs4ksu.git}"
 SUSFS_BRANCH="${SUSFS_BRANCH:-gki-android15-6.6}"
 SUSFS_KSUNEXT_PATCH_REPO_URL="${SUSFS_KSUNEXT_PATCH_REPO_URL:-https://github.com/WildKernels/kernel_patches.git}"
 SUSFS_KSUNEXT_PATCH_DIR="${SUSFS_KSUNEXT_PATCH_DIR:-next/susfs_fix_patches/v2.2.0}"
-SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES="${SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES:-1}"
+SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES="${SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES:-0}"
 SUSFS_KSUNEXT_PATCH_STRICT="${SUSFS_KSUNEXT_PATCH_STRICT:-0}"
 SUSFS_REMOVE_PROTECTED_EXPORTS="${SUSFS_REMOVE_PROTECTED_EXPORTS:-0}"
 KERNEL_SOURCE_DIR="${1:-$(pwd)}"
@@ -183,7 +184,7 @@ apply_ksunext_susfs_patches() {
     return 0
   fi
 
-  die "could not apply any KernelSU-side SUSFS patch"
+  die "could not apply any KernelSU-side SUSFS patch. The fallback WildKernels patches are disabled by default because they caused sucompat.c compile failures on this KernelSU-Next tree. Set SUSFS_USE_WILDKERNELS_KSUNEXT_PATCHES=1 only if you intentionally want to test them."
 }
 
 apply_ksunext_susfs_patches
