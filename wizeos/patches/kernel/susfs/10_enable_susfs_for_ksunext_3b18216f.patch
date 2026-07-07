@@ -2,7 +2,7 @@ diff --git a/kernel/Kconfig b/kernel/Kconfig
 index c7701661..4d4c7f2 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
-@@ -35,6 +35,97 @@ config KSU_DISABLE_POLICY
+@@ -35,5 +35,62 @@ config KSU_DISABLE_POLICY
  	  Disable per-app root/non-root profile customization.
  	  Escalation will always use the default full root profile, and
  	  non-root handling will follow the global umount policy only.
