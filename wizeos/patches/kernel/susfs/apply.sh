@@ -261,6 +261,10 @@ block = r'''
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/cred.h>
 #include <linux/types.h>
+#include <linux/fs.h>
+#include <linux/namei.h>
+#include <linux/stat.h>
+#include <linux/uaccess.h>
 
 u32 susfs_ksu_sid __weak __read_mostly;
 u32 susfs_init_sid __weak __read_mostly;
@@ -285,6 +289,44 @@ bool __weak susfs_is_current_zygote_domain(void)
 bool __weak susfs_is_current_ksu_domain(void)
 {
 	return false;
+}
+
+int __weak ksu_handle_faccessat(int *dfd, const char __user **filename_user,
+				int *mode, int *flags)
+{
+	return 0;
+}
+
+void __weak ksu_handle_sys_read(unsigned int fd)
+{
+}
+
+void __weak ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr)
+{
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+int __weak ksu_handle_stat(int *dfd, struct filename **filename, int *flags)
+{
+	return 0;
+}
+#else
+int __weak ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
+{
+	return 0;
+}
+#endif
+
+int __weak ksu_handle_execveat(int *fd, struct filename **filename_ptr,
+			       void *argv, void *envp, int *flags)
+{
+	return 0;
+}
+
+int __weak ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+					void *argv, void *envp, int *flags)
+{
+	return 0;
 }
 #endif
 '''
