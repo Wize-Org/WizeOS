@@ -265,11 +265,16 @@ block = r'''
 #include <linux/namei.h>
 #include <linux/stat.h>
 #include <linux/uaccess.h>
+#include <linux/jump_label.h>
+#include <linux/reboot.h>
 
 u32 susfs_ksu_sid __weak __read_mostly;
 u32 susfs_init_sid __weak __read_mostly;
 u32 susfs_zygote_sid __weak __read_mostly;
 u32 susfs_priv_app_sid __weak __read_mostly;
+
+struct static_key_true ksu_is_init_rc_hook_enabled __weak = STATIC_KEY_TRUE_INIT;
+struct static_key_true ksu_is_input_hook_enabled __weak = STATIC_KEY_TRUE_INIT;
 
 bool __weak susfs_is_sid_equal(const struct cred *cred, u32 sid2)
 {
@@ -327,6 +332,11 @@ int __weak ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
 					void *argv, void *envp, int *flags)
 {
 	return 0;
+}
+
+void __weak ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
+				 void __user *arg)
+{
 }
 #endif
 '''
